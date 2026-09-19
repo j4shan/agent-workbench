@@ -12,7 +12,6 @@ or edges patched by hand fail here.
 Usage:
     check_plan.py <plan file>
     check_plan.py -                 # read the plan on stdin
-    check_plan.py --allow-model claude-opus-5-high <plan file>
 """
 
 from __future__ import annotations
@@ -29,31 +28,21 @@ from task_dag import CATEGORIES, Slice, build  # noqa: E402
 
 DAG_HEADERS = ["Task #", "Goal", "Category", "Task", "Depends on", "Success criterion"]
 GOALS_HEADERS = ["Goal", "Tasks"]
-CATEGORY_HEADERS = ["Category", "Executor", "Rationale"]
-ASSIGNMENT_HEADERS = ["Task #", "Model", "Rationale"]
+EXECUTION_HEADERS = ["Task #", "Executor", "Rationale"]
 SPEC_HEADERS = ["Clause", "Document", "Change", "Driven by"]
 
 REQUIRED_SECTIONS = [
     "Problem Statement",
     "Task DAG",
-    "Category Assignment",
-    "Task Assignment",
+    "Task Execution",
     "Tasks",
     "Spec Sync",
     "Execution Guidelines",
 ]
 
 BODY_FIELDS = ["Files", "Consumes", "Produces", "Verify"]
-EXECUTOR = re.compile(r"^(main-agent|subagent:[a-z0-9][a-z0-9.\-]*)$")
+EXECUTOR = re.compile(r"^(main-agent|subagent)$")
 SPEC_CHANGES = {"add", "amend", "remove"}
-ROUTINE_MODELS = {
-    "cursor-grok-4.6-high",
-    "gpt-5.6-sol-medium",
-    "kimi-k3-high",
-    "cursor-grok-4.6-medium",
-    "gemini-3.7-flash-high",
-}
-NAMED_MODELS = {"claude-opus-5-high", "gemini-3.1-pro"}
 EMPTY = {"", "—", "-", "–"}
 
 CONFIG_NAMES = {
@@ -99,6 +88,20 @@ def classify(path: str) -> str | None:
     if suffix in {".yaml", ".yml", ".toml", ".ini", ".cfg"}:
         return "config"
     return None
+
+
+def is_test_path(path: str) -> bool:
+    clean = path.strip().strip("`").split()[0] if path.strip() else ""
+    lower = clean.lower()
+    name = lower.rsplit("/", 1)[-1]
+    return (
+        name.startswith("test_")
+        or name.endswith("_test.py")
+        or ".test." in name
+        or lower.startswith("tests/")
+        or "/tests/" in lower
+        or "/fixtures/" in lower
+    )
 
 
 class Report:
@@ -214,12 +217,16 @@ def check_dag(doc: plan_doc.PlanDoc, report: Report) -> tuple[plan_doc.Table | N
         if row["Success criterion"].strip() in EMPTY:
             report.add(line, f"{row['Task #'].strip()} has no success criterion")
 
-    pairs: dict[tuple[str, str], str] = {}
+    pairs: dict[tuple[str, str], list[str]] = {}
     for row, line in zip(dag.rows, dag.row_lines):
         key = (row["Goal"].strip(), row["Category"].strip())
-        if key in pairs:
-            report.add(line, f"goal '{key[0]}' has two {key[1]} tasks: {pairs[key]}, {row['Task'].strip()}")
-        pairs[key] = row["Task"].strip()
+        pairs.setdefault(key, []).append(row["Task"].strip())
+        limit = 2 if key[1] == "code" else 1
+        if len(pairs[key]) > limit:
+            report.add(
+                line,
+                f"goal '{key[0]}' has too many {key[1]} tasks: {', '.join(pairs[key])}",
+            )
 
     rebuilt = rebuild(dag, report)
     if rebuilt is None:
@@ -272,53 +279,28 @@ def check_goals(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> N
             report.add(line, f"goal '{goal}' lists {cell}; the DAG has {by_goal[goal]}")
 
 
-def check_assignments(doc: plan_doc.PlanDoc, dag: plan_doc.Table, allowed: set[str], report: Report) -> None:
-    used = []
-    for row in dag.rows:
-        category = row["Category"].strip()
-        if category not in used:
-            used.append(category)
-
-    categories = doc.table_with_headers("Category Assignment", CATEGORY_HEADERS)
-    if categories is None:
-        report.add(0, f"## Category Assignment has no {' | '.join(CATEGORY_HEADERS)} table")
-    else:
-        listed = [row["Category"].strip() for row in categories.rows]
-        for category in used:
-            if category not in listed:
-                report.add(categories.line, f"category '{category}' is used but has no Category Assignment row")
-        for row, line in zip(categories.rows, categories.row_lines):
-            category = row["Category"].strip()
-            if category not in used:
-                report.add(line, f"category '{category}' is assigned but no task uses it")
-            if listed.count(category) > 1:
-                report.add(line, f"category '{category}' has more than one executor")
-            executor = row["Executor"].strip()
-            if not EXECUTOR.match(executor):
-                report.add(line, f"executor '{executor}' must be main-agent or subagent:<type>")
-            if row["Rationale"].strip() in EMPTY:
-                report.add(line, f"category '{category}' has no rationale")
-
-    assignments = doc.table_with_headers("Task Assignment", ASSIGNMENT_HEADERS)
-    if assignments is None:
-        report.add(0, f"## Task Assignment has no {' | '.join(ASSIGNMENT_HEADERS)} table")
+def check_execution(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> None:
+    execution = doc.table_with_headers("Task Execution", EXECUTION_HEADERS)
+    if execution is None:
+        report.add(0, f"## Task Execution has no {' | '.join(EXECUTION_HEADERS)} table")
         return
+
     labels = [row["Task #"].strip() for row in dag.rows]
-    assigned = [row["Task #"].strip() for row in assignments.rows]
+    listed = [row["Task #"].strip() for row in execution.rows]
     for label in labels:
-        if label not in assigned:
-            report.add(assignments.line, f"{label} has no Task Assignment row")
-    for row, line in zip(assignments.rows, assignments.row_lines):
+        if label not in listed:
+            report.add(execution.line, f"{label} has no Task Execution row")
+    for row, line in zip(execution.rows, execution.row_lines):
         label = row["Task #"].strip()
         if label not in labels:
             report.add(line, f"{label} is assigned but is not on the DAG")
-        model = row["Model"].strip()
-        if model in EMPTY:
-            report.add(line, f"{label} has a blank Model cell")
-        elif model in NAMED_MODELS and model not in allowed:
-            report.add(line, f"{label} routes to '{model}'; use --allow-model when the user named it")
-        elif model not in ROUTINE_MODELS and model not in allowed:
-            report.add(line, f"{label} model '{model}' is not a subagent type id")
+        if listed.count(label) > 1:
+            report.add(line, f"{label} has more than one Task Execution row")
+        executor = row["Executor"].strip()
+        if not EXECUTOR.match(executor):
+            report.add(line, f"executor '{executor}' must be main-agent or subagent")
+        if row["Rationale"].strip() in EMPTY:
+            report.add(line, f"{label} has no execution rationale")
 
 
 def check_bodies(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> None:
@@ -328,6 +310,8 @@ def check_bodies(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> 
         report.add(0, f"## Tasks holds {found}; the DAG has {expected}")
 
     category_of = {row["Task #"].strip(): row["Category"].strip() for row in dag.rows}
+    paths_by_label: dict[str, list[str]] = {}
+    owner_by_path: dict[str, str] = {}
     for body in doc.task_bodies:
         for name in BODY_FIELDS:
             if name not in body.fields:
@@ -336,25 +320,57 @@ def check_bodies(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> 
             filled = [v for v in body.fields[name] if v.strip("-* ").strip()]
             if not filled:
                 report.add(body.line, f"{body.label} **{name}** is empty")
-            elif name in {"Files", "Verify"} and not [
+            elif name == "Verify" and not [
                 v for v in filled if v.strip("-* ").strip() not in EMPTY
             ]:
-                # Consumes and Produces may legitimately be the em dash; Files
-                # and Verify may not.
+                # Files, Consumes, and Produces may legitimately be the em dash;
+                # Verify may not.
                 report.add(body.line, f"{body.label} **{name}** is empty")
         extra = set(body.fields) - set(BODY_FIELDS)
         if extra:
             report.add(body.line, f"{body.label} body has unexpected fields: {', '.join(sorted(extra))}")
 
         want = category_of.get(body.label)
+        paths_by_label[body.label] = []
         for entry in body.fields.get("Files", []):
             text = entry.lstrip("-* ").strip()
             if not text:
                 continue
             path = text.split("(")[0].split(",")[0].strip().strip("`")
+            if path in EMPTY:
+                continue
+            paths_by_label[body.label].append(path)
+            previous = owner_by_path.get(path)
+            if previous and previous != body.label:
+                report.add(body.line, f"{path} is owned by both {previous} and {body.label}")
+            owner_by_path[path] = body.label
             got = classify(path)
             if want and got and got != want:
                 report.add(body.line, f"{body.label} is a {want} task but Files names '{path}' ({got})")
+
+    code_by_goal: dict[str, list[str]] = {}
+    for row in dag.rows:
+        if row["Category"].strip() == "code":
+            code_by_goal.setdefault(row["Goal"].strip(), []).append(row["Task #"].strip())
+    body_line = {body.label: body.line for body in doc.task_bodies}
+    for goal, labels in code_by_goal.items():
+        if len(labels) != 2:
+            continue
+        roles: list[str] = []
+        for label in labels:
+            paths = [p for p in paths_by_label.get(label, []) if classify(p) == "code"]
+            flags = [is_test_path(p) for p in paths]
+            if flags and all(flags):
+                roles.append("tests")
+            elif flags and not any(flags):
+                roles.append("source")
+            else:
+                roles.append("mixed")
+        if sorted(roles) != ["source", "tests"]:
+            report.add(
+                body_line.get(labels[1], 0),
+                f"goal '{goal}' has two code tasks; one must own production source and one tests",
+            )
 
 
 def check_spec_sync(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> None:
@@ -390,12 +406,6 @@ def check_spec_sync(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("plan", help="path to the plan file, or - for stdin")
-    parser.add_argument(
-        "--allow-model",
-        action="append",
-        default=[],
-        help="a model the user named explicitly; repeatable",
-    )
     args = parser.parse_args()
 
     try:
@@ -410,7 +420,7 @@ def main() -> int:
     dag, _ = check_dag(doc, report)
     if dag is not None:
         check_goals(doc, dag, report)
-        check_assignments(doc, dag, set(args.allow_model), report)
+        check_execution(doc, dag, report)
         check_bodies(doc, dag, report)
         check_spec_sync(doc, dag, report)
     return report.flush(args.plan)

@@ -14,7 +14,7 @@ goal-cut edges. The table states what is true when the plan is written, so it
 carries no status column and no reverse-edge column.
 
 Categories are `code`, `config`, `docs`, `assets`. A goal may have at most one
-task per category.
+task per category, except `code`, which may have two.
 
 Usage:
     task_dag.py --goal-order add-cache,ship \\
@@ -26,8 +26,8 @@ Usage:
         | task_dag.py
     task_dag.py --format table --task g:code:a --task g:config:b "a > b"
 
-A cycle, an empty goal, a second task in the same goal and category, or a
-cross-goal pair exits with status 1.
+A cycle, an empty goal, too many tasks in one goal and category, or a cross-goal
+pair exits with status 1.
 """
 
 from __future__ import annotations
@@ -165,15 +165,16 @@ def build(
         if not any(sl.goal == goal for sl in slices):
             raise ValueError(f"empty goal: {goal!r}")
 
-    pair_seen: dict[tuple[str, str], str] = {}
+    pair_seen: dict[tuple[str, str], list[str]] = {}
     for sl in slices:
         key = (sl.goal, sl.category)
-        if key in pair_seen:
+        pair_seen.setdefault(key, []).append(sl.id)
+        limit = 2 if sl.category == "code" else 1
+        if len(pair_seen[key]) > limit:
             raise ValueError(
-                f"two tasks in goal {sl.goal!r} for category {sl.category}: "
-                f"{pair_seen[key]}, {sl.id}"
+                f"too many tasks in goal {sl.goal!r} for category {sl.category}: "
+                f"{', '.join(pair_seen[key])}"
             )
-        pair_seen[key] = sl.id
 
     for src, dst in edges:
         if src not in slices_by_id or dst not in slices_by_id:
@@ -308,31 +309,14 @@ def render_pairs(dag: dict) -> str:
     return "\n".join(parts)
 
 
-def render_category_assignment(dag: dict) -> list[str]:
+def render_task_execution(dag: dict) -> list[str]:
     lines = [
-        "| Category | Executor | Rationale |",
-        "|---|---|---|",
-    ]
-    seen: list[str] = []
-    for task in dag["tasks"]:
-        if task["category"] not in seen:
-            seen.append(task["category"])
-    for category in seen:
-        lines.append(
-            f"| {category} | <main-agent or subagent:type> | <why this agent owns this category> |"
-        )
-    return lines
-
-
-def render_task_assignment(dag: dict) -> list[str]:
-    lines = [
-        "| Task # | Model | Rationale |",
+        "| Task # | Executor | Rationale |",
         "|---|---|---|",
     ]
     for task in dag["tasks"]:
         lines.append(
-            f"| {task['label']} | <cursor-grok-4.6-high, gpt-5.6-sol-medium, kimi-k3-high, "
-            f"cursor-grok-4.6-medium, or gemini-3.7-flash-high> | <why this model> |"
+            f"| {task['label']} | <main-agent or subagent> | <why this task is or is not delegated> |"
         )
     return lines
 
@@ -347,7 +331,7 @@ def render_task_bodies(dag: dict) -> list[str]:
             "",
             "**Files**",
             "",
-            "- <path in this task's category>",
+            "- <path in this task's category, or — for read-only work>",
             "",
             "**Consumes**",
             "",
@@ -390,13 +374,9 @@ def render_scaffold(dag: dict, title: str) -> str:
             "",
             render_table(dag),
             "",
-            "## Category Assignment",
+            "## Task Execution",
             "",
-            *render_category_assignment(dag),
-            "",
-            "## Task Assignment",
-            "",
-            *render_task_assignment(dag),
+            *render_task_execution(dag),
             "",
             "## Tasks",
             "",
@@ -422,11 +402,9 @@ def render_scaffold(dag: dict, title: str) -> str:
             "the answer. On `2`, drop that task, write one line here saying why, and",
             "re-run the tool so the numbering stays generated.",
             "",
-            "Goals are serial, and category tasks are the only parallel dimension.",
-            "Within a goal, tasks with no edge between them run in parallel, at most",
-            "one per category, and the ready `subagent:` ones launch in one message",
-            "with multiple `Agent` calls. Intra-goal edges still bind, so not every",
-            "task of a goal is parallel.",
+            "Goals are serial. Within a goal, ready tasks with no edge and no",
+            "overlapping files may run in parallel. Launch ready `subagent` tasks",
+            "together. Keep integration and final synthesis on the main agent.",
             "",
             "On a wrong or missing edge, fix the pairs, re-run the tool, and replace",
             "the tables. Never patch numbering by hand.",

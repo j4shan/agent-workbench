@@ -4,9 +4,8 @@
 # An item on disk but missing here is treated as true.
 skills:
   execution-planning: true
-  figure-authoring: true
+  visualize_with_drawio: true
   technical-writing: true
-instructions:
   problem-presentation-format: true
   project-metadata-guideline: true
 subagents:

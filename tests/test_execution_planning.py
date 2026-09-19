@@ -7,6 +7,7 @@ Run from the repository root:
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import tempfile
@@ -41,6 +42,22 @@ SAMPLE = [
 
 
 class TaskDagTest(unittest.TestCase):
+    def test_skill_has_no_versioned_executor_ids(self):
+        versioned_id = re.compile(
+            r"\b(?:[a-z]{2,}-){1,3}(?:"
+            r"[a-z]*\d+\.\d+(?:-[a-z0-9.]+)*|"
+            r"[a-z]+\d+(?:-[a-z0-9.]+)+|"
+            r"(?:[a-z]{2,}-)+\d+(?:-[a-z0-9.]+)+"
+            r")\b",
+            re.IGNORECASE,
+        )
+        skill_files = [
+            ROOT / "skills" / "execution-planning" / "SKILL.md",
+            *SCRIPTS.glob("*.py"),
+        ]
+        for path in skill_files:
+            self.assertIsNone(versioned_id.search(path.read_text()), path)
+
     def test_table_is_six_static_columns(self):
         result = run(str(TASK_DAG), "--format", "table", *SAMPLE)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -84,10 +101,24 @@ class TaskDagTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("cycle detected", result.stderr)
 
-    def test_second_task_in_one_goal_and_category_is_rejected(self):
-        result = run(str(TASK_DAG), "--task", "g:code:a", "--task", "g:code:b")
+    def test_two_code_tasks_in_one_goal_are_allowed(self):
+        result = run(str(TASK_DAG), "--task", "g:code:source", "--task", "g:code:tests")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_third_code_task_in_one_goal_is_rejected(self):
+        result = run(
+            str(TASK_DAG),
+            "--task", "g:code:source",
+            "--task", "g:code:tests",
+            "--task", "g:code:extra",
+        )
         self.assertEqual(result.returncode, 1)
-        self.assertIn("two tasks in goal", result.stderr)
+        self.assertIn("too many tasks", result.stderr)
+
+    def test_second_non_code_task_in_one_goal_is_rejected(self):
+        result = run(str(TASK_DAG), "--task", "g:docs:a", "--task", "g:docs:b")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("too many tasks", result.stderr)
 
     def test_cross_goal_pair_is_rejected(self):
         result = run(str(TASK_DAG), "--goal-order", "one,two", "--task", "one:code:a", "--task", "two:code:b", "a > b")
@@ -97,6 +128,11 @@ class TaskDagTest(unittest.TestCase):
     def test_scaffold_carries_guidance_not_a_run_loop(self):
         result = run(str(TASK_DAG), "--format", "scaffold", "--title", "x", *SAMPLE)
         self.assertIn("## Execution Guidelines", result.stdout)
+        self.assertIn("## Task Execution", result.stdout)
+        self.assertIn("<main-agent or subagent>", result.stdout)
+        self.assertNotIn("## Category Assignment", result.stdout)
+        self.assertNotIn("## Task Assignment", result.stdout)
+        self.assertNotIn("| Model |", result.stdout)
         self.assertNotIn("## Execution Protocol", result.stdout)
         self.assertNotIn("Status is only", result.stdout)
         self.assertNotIn("**Waivers**", result.stdout)
@@ -179,34 +215,33 @@ class CheckPlanTest(unittest.TestCase):
     def test_goals_disagree_with_the_dag(self):
         self.assert_reports(self.mutate("| setup | T1, T2 |", "| setup | T1 |"), "the DAG has")
 
-    def test_used_category_without_an_executor(self):
+    def test_task_without_an_executor(self):
         self.assert_reports(
-            self.mutate("| docs | main-agent | The README wording is a judgement about what users need to know |\n", ""),
-            "has no Category Assignment row",
+            self.mutate("| T3 | main-agent | The final wording depends on the completed implementation |\n", ""),
+            "has no Task Execution row",
         )
 
     def test_executor_is_not_an_agent(self):
         self.assert_reports(
-            self.mutate("| config | main-agent |", "| config | whoever is free |"),
-            "must be main-agent or subagent:<type>",
+            self.mutate("| T2 | main-agent |", "| T2 | whoever is free |"),
+            "must be main-agent or subagent",
         )
 
-    def test_blank_model_cell(self):
+    def test_subagent_type_is_rejected(self):
         self.assert_reports(
-            self.mutate("| T2 | cursor-grok-4.6-medium |", "| T2 |  |"),
-            "blank Model cell",
+            self.mutate("| T1 | subagent |", "| T1 | subagent:custom-worker |"),
+            "must be main-agent or subagent",
         )
-
-    def test_named_model_needs_the_flag(self):
-        text = GOOD_PLAN.read_text().replace("| T1 | cursor-grok-4.6-high |", "| T1 | claude-opus-5-high |")
-        self.assert_reports(self.check(text), "use --allow-model when the user named it")
-        self.assertEqual(self.check(text, "--allow-model", "claude-opus-5-high").returncode, 0)
 
     def test_file_outside_the_task_category(self):
         self.assert_reports(
             self.mutate("- src/parser.py", "- docs/parser-notes.md"),
             "is a code task but Files names",
         )
+
+    def test_read_only_task_may_write_no_files(self):
+        result = self.mutate("- README.md", "- —")
+        self.assertEqual(result.returncode, 0, result.stdout)
 
     def test_body_missing_a_field(self):
         self.assert_reports(
@@ -222,7 +257,10 @@ class CheckPlanTest(unittest.TestCase):
 
     def test_leftover_placeholder(self):
         self.assert_reports(
-            self.mutate("- .github/workflows/ci.yml", "- <path in this task's category>"),
+            self.mutate(
+                "- .github/workflows/ci.yml",
+                "- <path in this task's category, or — for read-only work>",
+            ),
             "unfilled placeholder",
         )
 
@@ -235,10 +273,38 @@ class CheckPlanTest(unittest.TestCase):
             "Task DAG columns must be",
         )
 
-    def test_two_tasks_in_one_goal_and_category(self):
+    def test_two_non_code_tasks_in_one_goal_and_category(self):
         self.assert_reports(
-            self.mutate("| T2 | setup | config | ci |", "| T2 | setup | code | ci |"),
-            "has two code tasks",
+            self.mutate("| T1 | setup | code | parser |", "| T1 | setup | config | parser |"),
+            "has too many config tasks",
+        )
+
+    def test_two_code_tasks_must_split_source_and_tests(self):
+        text = GOOD_PLAN.read_text()
+        text = text.replace("| setup | T1, T2 |", "| setup | T1, T2, T3 |")
+        text = text.replace("| ship | T3 |", "| ship | T4 |")
+        text = text.replace(
+            "| T2 | setup | config | ci | T1 | a pull request on this repo shows the `unit` job green |",
+            "| T2 | setup | code | parser-more | T1 | `python3 -m unittest tests.test_parser` passes |\n"
+            "| T3 | setup | config | ci | T2 | a pull request on this repo shows the `unit` job green |",
+        )
+        text = text.replace("| T3 | ship | docs | notes | T2 |", "| T4 | ship | docs | notes | T3 |")
+        text = text.replace("| T2 | main-agent |", "| T2 | subagent |", 1)
+        text = text.replace("| T3 | main-agent |", "| T3 | main-agent |", 1)
+        text = text.replace(
+            "| T3 | main-agent | The final wording depends on the completed implementation |",
+            "| T3 | main-agent | The CI change touches shared configuration |\n"
+            "| T4 | main-agent | The final wording depends on the completed implementation |",
+        )
+        text = text.replace(
+            "### T2 ci",
+            "### T2 parser-more\n\n**Files**\n\n- src/parser_extra.py\n\n**Consumes**\n\n- `parse_config(path)` from T1\n\n**Produces**\n\n- Additional parser behavior\n\n**Verify**\n\n- `python3 -m unittest tests.test_parser`\n\n### T3 ci",
+        )
+        text = text.replace("### T3 notes", "### T4 notes")
+        text = text.replace("| amend | T3 |", "| amend | T4 |")
+        self.assert_reports(
+            self.check(text),
+            "one must own production source and one tests",
         )
 
     def test_missing_section(self):

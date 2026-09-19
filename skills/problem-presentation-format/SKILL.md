@@ -1,3 +1,9 @@
+---
+name: problem-presentation-format
+description: Use whenever a problem, defect, open decision, review finding, or plan-execution issue is being reported. Formats each finding as a numbered P<n> markdown table (Category, Scope, Severity, Components, Status) plus Problem Description and Proposed Action. Reach for this on review-request responses, plan-execution summaries, issues resolved without asking, and decisions taken without asking. Do not use for a simple or short explanation.
+disable-model-invocation: true
+---
+
 # Problem presentation format
 
 **Objective.** Report every problem, defect and open decision in one fixed layout, so the

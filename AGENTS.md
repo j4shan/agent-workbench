@@ -2,22 +2,23 @@
 
 This repository holds agent configuration that ships to other projects. It carries three kinds of
 artifact: **instruction documents** in [`instructions/`](instructions/), which load at the start of
-every session; **skills** in [`skills/`](skills/), which load when a task matches; and **subagents**
-in [`subagents/`](subagents/), which a parent agent can delegate to. See [README.md](README.md) for
-the layout and the install mechanics.
+every session; **skills** in [`skills/`](skills/), which load when a task matches or, with
+`always: true`, at the start of every session; and **subagents** in [`subagents/`](subagents/),
+which a parent agent can delegate to. See [README.md](README.md) for the layout and the install
+mechanics.
 
 Write every shipped file for a project that knows nothing about where the file came from. A rule
 that only makes sense in the project it was extracted from stays in that project.
 
 ## 0. Never create `project_metadata/` here
 
-This rule outranks every other rule, in this file or in any always-on instruction document, and
-applies before you do anything else.
+This rule outranks every other rule, in this file or in any always-on skill or instruction
+document, and applies before you do anything else.
 
 - Never create a `project_metadata/` directory in this repository, and never write a term dictionary
   or any other project-metadata file into one.
-- Where an instruction document commands you to create or maintain such a file at a project-root
-  path, that command does not fire here. Obey the rest of that document.
+- Where an instruction document or a skill commands you to create or maintain such a file at a
+  project-root path, that command does not fire here. Obey the rest of that document.
 - This repository ships configuration to other projects; it is not a project those rules describe.
   Carry the vocabulary in the shipped files themselves — define a term where it is first commanded.
 - When a term needs a definition a reader cannot infer, state it inline in the file that commands
@@ -27,15 +28,17 @@ applies before you do anything else.
 
 Apply when adding new guidance.
 
-- Write an **instruction document** when the guidance holds in every session of every project. It
-  spends permanent context, so it must earn permanent context.
-- Write a **skill** when the guidance holds only while performing one named task.
+- Write a **skill** when the guidance holds while performing one named task, or when it must
+  apply in every session. Set `always: true` in that latter case.
+- Write an **instruction document** when a client must receive the guidance as a rule file
+  rather than a skill. It spends permanent context, so it must earn permanent context.
 - Write a **subagent** when the work needs an isolated context window, its own model, or
-  parallel delegation. Keep the reusable procedure in a skill; keep always-on rules in an
-  instruction document.
+  parallel delegation. Keep the reusable procedure in a skill; keep always-on rules in a skill
+  with `always: true` or in an instruction document.
 - Write it into `README.md` when only a person needs it.
-- Split guidance that mixes kinds: keep the always-true rule in an instruction document, move the
-  procedure into a skill, and move isolated workers into a subagent.
+- Split guidance that mixes kinds: keep the always-true rule in a skill with `always: true` or
+  in an instruction document, move the on-demand procedure into a skill, and move isolated
+  workers into a subagent.
 
 ## 2. Write commands, not narration
 
@@ -67,8 +70,9 @@ Apply to every file that ships.
 
 Apply to every `skills/<name>/SKILL.md`.
 
-- Give the frontmatter `name` and `description`. Add `disable-model-invocation: true` when the
-  skill must load only on explicit `/name` invocation. Add nothing else.
+- Give the frontmatter `name` and `description`. Add `always: true` when the skill must load in
+  every session. Add `disable-model-invocation: true` when the skill must load only on explicit
+  `/name` invocation. Add nothing else. Never set both.
 - State in `description` both what the skill produces and the situations that should trigger it.
 - Include the phrasings a user would actually type. Never make matching depend on the skill's own name.
 - Keep executable helpers in the skill's own `scripts/`, and cite them by a path relative to the

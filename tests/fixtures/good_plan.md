@@ -21,21 +21,13 @@ message.
 | T2 | setup | config | ci | T1 | a pull request on this repo shows the `unit` job green |
 | T3 | ship | docs | notes | T2 | `README.md` documents the parser entry point and its two flags |
 
-## Category Assignment
+## Task Execution
 
-| Category | Executor | Rationale |
+| Task # | Executor | Rationale |
 |---|---|---|
-| code | subagent:cursor-grok-4.6-high | Parser and its tests are self-contained and verified by their own run |
-| config | main-agent | The CI change has to be reconciled with the existing workflow by hand |
-| docs | main-agent | The README wording is a judgement about what users need to know |
-
-## Task Assignment
-
-| Task # | Model | Rationale |
-|---|---|---|
-| T1 | cursor-grok-4.6-high | Hard task: a grammar plus error messages against a written spec |
-| T2 | cursor-grok-4.6-medium | Ordinary task: one workflow file |
-| T3 | cursor-grok-4.6-medium | Ordinary task: two paragraphs of documentation |
+| T1 | subagent | Parser and its tests are a self-contained coding workstream |
+| T2 | main-agent | The CI change must be reconciled with shared project configuration |
+| T3 | main-agent | The final wording depends on the completed implementation |
 
 ## Tasks
 
@@ -109,10 +101,9 @@ This plan has a spec sync task. Show the `## Spec Sync` table and ask
 `Confirm spec update? [1. Yes / 2. No]` before any task starts. On `2`, drop that task, write one
 line here saying why, and re-run the tool so the numbering stays generated.
 
-Goals are serial, and category tasks are the only parallel dimension. Within a goal, tasks with no
-edge between them run in parallel, at most one per category, and the ready `subagent:` ones launch
-in one message with multiple `Agent` calls. Intra-goal edges still bind, so not every task of a
-goal is parallel.
+Goals are serial. Within a goal, ready tasks with no edge and no overlapping files may run in
+parallel. Launch ready `subagent` tasks together. Keep integration and final synthesis on the main
+agent.
 
 On a wrong or missing edge, fix the pairs, re-run the tool, and replace the tables. Never patch
 numbering by hand.

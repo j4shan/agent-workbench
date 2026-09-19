@@ -37,16 +37,28 @@ Run them with `python3 -m unittest discover tests`.
 
 The `description` is what a client matches a task against, so it states both what the skill
 produces and the situations that should trigger it — including phrasings a user would actually
-type rather than the skill's own name. A skill with `disable-model-invocation: true` is the
-exception: the agent must not apply it from context. It loads only when the user types
-`/<name>` in chat.
+type rather than the skill's own name. A skill with `always: true` must load in every session.
+A skill with `disable-model-invocation: true` is the other exception: the agent must not apply
+it from context. It loads only when the user types `/<name>` in chat.
+
+Bundled skills:
+
+| Skill | Purpose |
+| --- | --- |
+| `execution-planning` | Build execution plans and task DAGs for multi-step work. |
+| `problem-presentation-format` | Report defects and open decisions in a fixed numbered layout. |
+| `project-metadata-guideline` | Place project-owned docs and assets in a fixed tree (`always: true`). |
+| `technical-writing` | Produce teaching-style technical explanations. |
+| `visualize_with_drawio` | Create draw.io visualizations from written specifications. |
 
 ### Instructions
 
-One file per subject, named for the subject. These are **always-on** documents: once installed
+One file per subject, named for the subject. These are **always-on** rule files: once installed
 they load at the start of every session in the project they were copied into, so each one must
-earn permanent context. Guidance that only matters while performing a particular task belongs in
-a skill, which loads on demand, or in this README, which is read by people.
+earn permanent context. Prefer a skill with `always: true` when the same guidance can ship as a
+skill. Guidance that only matters while performing a particular task belongs in a skill, which
+loads on demand, or in this README, which is read by people. No instruction documents ship
+today.
 
 Write each one as a **paper of commands**, not a description of how things are:
 
@@ -96,8 +108,8 @@ every included skill. A comma-separated list installs only those named skills; a
 an error.
 
 [`install.yaml`](install.yaml) is the inclusion list. Each skill, instruction, and subagent
-defaults to `true`. `instructions/terminology-discipline.md` is `false`, so a skill-only reinstall
-does not copy it into the target. An item on disk but missing from the file is still installed.
+defaults to `true`. Set a name to `false` to skip it. An item on disk but missing from the file
+is still installed.
 
 The script refuses a project-scope install into this repository itself.
 
@@ -144,13 +156,21 @@ longer want those skills, rules, and subagents applied to every project on the m
 ```bash
 rm -rf ~/.cursor/skills/execution-planning
 rm -rf ~/.claude/skills/execution-planning
-rm -f  ~/.cursor/rules/terminology-discipline.mdc \
-       ~/.cursor/rules/problem-presentation-format.mdc \
-       ~/.cursor/rules/project-metadata-guideline.mdc
-rm -f  ~/.claude/rules/terminology-discipline.md \
-       ~/.claude/rules/problem-presentation-format.md \
-       ~/.claude/rules/project-metadata-guideline.md
+rm -rf ~/.cursor/skills/problem-presentation-format
+rm -rf ~/.claude/skills/problem-presentation-format
+rm -rf ~/.cursor/skills/project-metadata-guideline
+rm -rf ~/.claude/skills/project-metadata-guideline
 rm -f  ~/.cursor/agents/cursor-grok-4.6-high.md
+```
+
+Earlier installs wrote those two as Cursor `.mdc` and Claude `.md` rule files. Those copies
+are not updated by a skill install. Remove them if they are still present:
+
+```bash
+rm -f ~/.cursor/rules/problem-presentation-format.mdc \
+      ~/.cursor/rules/project-metadata-guideline.mdc
+rm -f ~/.claude/rules/problem-presentation-format.md \
+      ~/.claude/rules/project-metadata-guideline.md
 ```
 
 ## Contributing back
