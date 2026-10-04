@@ -21,7 +21,7 @@ Install the documentation-writer stdio MCP server and register it with compatibl
   -h, --help             show this message
 
 Project scope installs the runtime under <project>/.agents/mcp/documentation-writer.
-User scope installs it under ~/Library/Application Support/coding-harness/mcp/.
+User scope installs it under ~/Library/Application Support/agent-workbench/mcp/.
 EOF
 }
 
@@ -85,12 +85,12 @@ if [[ "$scope" == project ]]; then
     [[ ${#positionals[@]} -eq 1 ]] || die "project scope requires exactly one project directory"
     [[ -d "${positionals[0]}" ]] || die "not a directory: ${positionals[0]}"
     project_root="$(cd "${positionals[0]}" && pwd)"
-    [[ "$project_root" != "$source_root" ]] || die "refuse to install into coding-harness itself"
+    [[ "$project_root" != "$source_root" ]] || die "refuse to install into agent-workbench itself"
     install_root="$project_root/.agents/mcp/$server_name"
 else
     [[ ${#positionals[@]} -eq 0 ]] || die "user scope takes no project directory"
     user_home="$HOME"
-    install_root="$user_home/Library/Application Support/coding-harness/mcp/$server_name"
+    install_root="$user_home/Library/Application Support/agent-workbench/mcp/$server_name"
 fi
 
 mkdir -p "$install_root"
@@ -142,8 +142,8 @@ import sys
 from pathlib import Path
 
 path, name, command, script = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
-start = f"# >>> coding-harness {name} >>>"
-end = f"# <<< coding-harness {name} <<<"
+start = f"# >>> agent-workbench {name} >>>"
+end = f"# <<< agent-workbench {name} <<<"
 text = path.read_text() if path.exists() else ""
 managed = re.compile(rf"(?ms)^\s*{re.escape(start)}.*?^\s*{re.escape(end)}\s*\n?")
 base = managed.sub("", text).rstrip()

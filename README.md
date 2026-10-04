@@ -1,7 +1,7 @@
-# coding-harness
+# agent-workbench
 
-Reusable configuration for AI coding agents — the parts that are worth carrying from one project
-to the next, kept in one place instead of being re-derived or copy-pasted per repository.
+Personal tools that improve the AI-agent experience: reusable skills, instructions, and MCP
+servers kept in one place instead of being re-derived or copied between projects.
 
 ## What lives here
 
@@ -144,7 +144,7 @@ CLI must already be available; user-scope Claude Code registration also requires
 Project scope installs the runtime at
 `<project>/.agents/mcp/documentation-writer/` and writes the selected client registrations to
 `<project>/.codex/config.toml`, `<project>/.mcp.json`, and `<project>/.cursor/mcp.json`. User scope
-installs under `~/Library/Application Support/coding-harness/mcp/documentation-writer/` and updates
+installs under `~/Library/Application Support/agent-workbench/mcp/documentation-writer/` and updates
 the corresponding user configurations. `--client all` is the default.
 
 The server exposes `write_project_documentation`. A caller supplies finalized changes, changed
