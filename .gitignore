@@ -15,14 +15,14 @@
 .cursor/
 .codex/
 
-# Node (MCP servers)
+# Node helpers
 node_modules/
 npm-debug.log*
 yarn-error.log*
 dist/
 build/
 
-# Python (skill scripts, MCP servers)
+# Python skill scripts
 __pycache__/
 *.py[cod]
 .venv/
@@ -31,7 +31,7 @@ venv/
 .pytest_cache/
 .ruff_cache/
 
-# Secrets and local environment — never commit credentials for an MCP server
+# Secrets and local environment
 .env
 .env.*
 *.local

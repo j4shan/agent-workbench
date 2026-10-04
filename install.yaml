@@ -3,6 +3,7 @@
 # false — skip
 # An item on disk but missing here is treated as true.
 skills:
+  documentation-writer: true
   execution-planning: true
   visualize_with_drawio: true
   technical-writing: true

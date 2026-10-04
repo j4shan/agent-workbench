@@ -1,7 +1,7 @@
 # agent-workbench
 
-Personal tools that improve the AI-agent experience: reusable skills, instructions, and MCP
-servers kept in one place instead of being re-derived or copied between projects.
+Personal tools that improve the AI-agent experience: reusable skills and instructions kept in one
+place instead of being re-derived or copied between projects.
 
 ## What lives here
 
@@ -9,10 +9,6 @@ servers kept in one place instead of being re-derived or copied between projects
 | --- | --- |
 | [`skills/`](skills/) | [Agent Skills](https://agentskills.io) folders — one directory per skill |
 | [`instructions/`](instructions/) | Instruction documents read by an agent — working conventions, review and reporting formats, authoring rules |
-| [`mcp/`](mcp/) | Local MCP servers that expose structured tools to compatible clients |
-
-The documentation writer MCP is installed independently with `install-mcp.sh`; the general
-`install.sh` continues to install only skills and instructions.
 
 [`AGENTS.md`](AGENTS.md) carries the rules for authoring what lives here, addressed to an agent
 working in this repository. `CLAUDE.md` is a symlink to it, so Claude Code and Cursor read one file.
@@ -42,6 +38,7 @@ Bundled skills:
 
 | Skill | Purpose |
 | --- | --- |
+| `documentation-writer` | Delegate bounded README, design-specification, and other human-facing documentation updates to Codex with a distilled final-state brief. |
 | `execution-planning` | Build execution plans and task DAGs for multi-step work. |
 | `problem-presentation-format` | Report defects and open decisions in a fixed numbered layout. |
 | `project-metadata-guideline` | Place project-owned docs and assets in a fixed tree (`always: true`). |
@@ -122,36 +119,18 @@ never installed.
 Paths written inside a skill are relative to the *consuming* project's root —
 `.agents/skills/<name>/scripts/…` — because that is where the shell starts.
 
+The `documentation-writer` skill includes an on-demand launcher rather than a resident service. A
+coordinating agent supplies finalized changes, changed-component summaries, target documents, and
+an absolute evidence manifest. The launcher validates those boundaries, starts an ephemeral Codex
+run with `gpt-6-sol` and medium reasoning, and fails if the run changes a file outside the named
+documents. It first looks for `codex` on `PATH`, then for the binary bundled with the Codex or
+ChatGPT macOS app.
+
 Where a destination already exists the script lists every collision and asks once, defaulting to
 overwrite; answering `n` skips all existing items and installs the rest. Skill folders are replaced
 whole, so a file deleted here does not survive in an install.
 
 Restart the client afterwards — skills and rules are read at session start.
-
-## Install the documentation writer MCP
-
-`install-mcp.sh` independently installs the local `documentation-writer` stdio server and registers
-it with Codex, Claude Code, and Cursor. It supports macOS only. Python 3.10+ and an authenticated Codex
-CLI must already be available; user-scope Claude Code registration also requires the `claude` CLI.
-
-```bash
-./install-mcp.sh /path/to/project
-./install-mcp.sh --scope project --client codex,claude /path/to/project
-./install-mcp.sh --scope user
-./install-mcp.sh --scope user --client cursor
-```
-
-Project scope installs the runtime at
-`<project>/.agents/mcp/documentation-writer/` and writes the selected client registrations to
-`<project>/.codex/config.toml`, `<project>/.mcp.json`, and `<project>/.cursor/mcp.json`. User scope
-installs under `~/Library/Application Support/agent-workbench/mcp/documentation-writer/` and updates
-the corresponding user configurations. `--client all` is the default.
-
-The server exposes `write_project_documentation`. A caller supplies finalized changes, changed
-component summaries, target documents, and an evidence manifest of absolute file paths. The server
-validates those boundaries, launches Codex with `gpt-6-sol` and medium reasoning, and rejects a run
-that changes anything outside the named target documents. See
-[`mcp/documentation-writer/README.md`](mcp/documentation-writer/README.md) for the brief contract.
 
 After a **project-scope** install, if earlier copies still exist at **user scope**, the script
 prints `rm` commands for those paths and does not delete them. Run the printed commands if you no
@@ -179,8 +158,8 @@ rm -f ~/.claude/rules/problem-presentation-format.md \
 ## Contributing back
 
 Anything added here must be **general**: it must make sense in a repository that knows nothing
-about the project it came from. A skill, instruction, or MCP server that names a specific spec file,
-product, or directory layout belongs in that project, not in this one. Where a rule is genuinely
+about the project it came from. A skill or instruction that names a specific spec file, product, or
+directory layout belongs in that project, not in this one. Where a rule is genuinely
 useful but carries a project-specific detail, state the rule by the role the artifact plays rather
 than by its path — and never by the location it happens to be installed to, which varies with the
 environment.
