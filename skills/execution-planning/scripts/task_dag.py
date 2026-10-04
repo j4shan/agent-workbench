@@ -309,18 +309,6 @@ def render_pairs(dag: dict) -> str:
     return "\n".join(parts)
 
 
-def render_task_execution(dag: dict) -> list[str]:
-    lines = [
-        "| Task # | Executor | Rationale |",
-        "|---|---|---|",
-    ]
-    for task in dag["tasks"]:
-        lines.append(
-            f"| {task['label']} | <main-agent or subagent> | <why this task is or is not delegated> |"
-        )
-    return lines
-
-
 def render_task_bodies(dag: dict) -> list[str]:
     lines: list[str] = []
     for task in dag["tasks"]:
@@ -374,10 +362,6 @@ def render_scaffold(dag: dict, title: str) -> str:
             "",
             render_table(dag),
             "",
-            "## Task Execution",
-            "",
-            *render_task_execution(dag),
-            "",
             "## Tasks",
             "",
             *render_task_bodies(dag),
@@ -403,8 +387,7 @@ def render_scaffold(dag: dict, title: str) -> str:
             "re-run the tool so the numbering stays generated.",
             "",
             "Goals are serial. Within a goal, ready tasks with no edge and no",
-            "overlapping files may run in parallel. Launch ready `subagent` tasks",
-            "together. Keep integration and final synthesis on the main agent.",
+            "overlapping files may run in parallel.",
             "",
             "On a wrong or missing edge, fix the pairs, re-run the tool, and replace",
             "the tables. Never patch numbering by hand.",

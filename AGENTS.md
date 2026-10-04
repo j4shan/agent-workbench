@@ -3,8 +3,8 @@
 This repository holds agent configuration that ships to other projects. It carries three kinds of
 artifact: **instruction documents** in [`instructions/`](instructions/), which load at the start of
 every session; **skills** in [`skills/`](skills/), which load when a task matches or, with
-`always: true`, at the start of every session; and **subagents** in [`subagents/`](subagents/),
-which a parent agent can delegate to. See [README.md](README.md) for the layout and the install
+`always: true`, at the start of every session; and **MCP servers** in [`mcp/`](mcp/), which expose
+structured tools to compatible clients. See [README.md](README.md) for the layout and install
 mechanics.
 
 Write every shipped file for a project that knows nothing about where the file came from. A rule
@@ -32,13 +32,12 @@ Apply when adding new guidance.
   apply in every session. Set `always: true` in that latter case.
 - Write an **instruction document** when a client must receive the guidance as a rule file
   rather than a skill. It spends permanent context, so it must earn permanent context.
-- Write a **subagent** when the work needs an isolated context window, its own model, or
-  parallel delegation. Keep the reusable procedure in a skill; keep always-on rules in a skill
-  with `always: true` or in an instruction document.
+- Write an **MCP server** when clients need a callable tool with a stable input contract and code
+  must validate inputs or perform controlled actions.
 - Write it into `README.md` when only a person needs it.
 - Split guidance that mixes kinds: keep the always-true rule in a skill with `always: true` or
-  in an instruction document, move the on-demand procedure into a skill, and move isolated
-  workers into a subagent.
+  in an instruction document, move the on-demand procedure into a skill, and expose controlled
+  actions through an MCP server.
 
 ## 2. Write commands, not narration
 
@@ -89,14 +88,13 @@ Apply to `instructions/`.
 
 ## 6. Update the surrounding pieces in the same change
 
-Apply when you add, rename, or delete a skill, an instruction document, or a subagent.
+Apply when you add, rename, or delete a skill, an instruction document, or an MCP server.
 
 - Update the README section that describes it.
-- Confirm `install.sh` still picks it up: it discovers every `instructions/*.md`, every
-  `subagents/*.md` except `README.md`, and every `skills/*/` holding a `SKILL.md`, then includes
+- Confirm `install.sh` still picks up skills and instructions: it discovers every
+  `instructions/*.md` except `README.md` and every `skills/*/` holding a `SKILL.md`, then includes
   each name according to `install.yaml`. A name missing from the file is included. Change the
   script only when that shape changes, never to name a new file. Set the new name in `install.yaml`
-  when it must not install by default. Subagents copy only when the installer is run with
-  `--subagent`.
+  when it must not install by default. Keep MCP installation independent in `install-mcp.sh`.
 - Define any new term inline, in the file that commands it. This repository keeps no term
   dictionary — see rule 0.

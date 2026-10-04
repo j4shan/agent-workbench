@@ -1,16 +1,16 @@
 ---
 name: execution-planning
-description: Use whenever a plan is being produced. Plan mode is active, or the user asks to plan a project, create an execution plan, break an objective into tasks, or build a task DAG. Produces serial functional goals, a dependency DAG, explicit task-level delegation, non-overlapping file ownership, observable success criteria, and a prose body saying how each task is done. Reach for this whenever multi-step work needs scoping, sequencing, breaking down, or delegating, even if the user never says "execution plan" or "DAG".
+description: Use whenever a plan is being produced. Plan mode is active, or the user asks to plan a project, create an execution plan, break an objective into tasks, or build a task DAG. Produces serial functional goals, a dependency DAG, non-overlapping file ownership, observable success criteria, and a prose body saying how each task is done. Reach for this whenever multi-step work needs scoping, sequencing, or breaking down, even if the user never says "execution plan" or "DAG".
 ---
 
 # Execution planning
 
 **Objective.** Turn an objective into a written execution plan with serial functional goals, a task
-DAG, explicit delegation, non-overlapping file ownership, and observable success criteria. The plan
-is static. It carries no status or run state.
+DAG, non-overlapping file ownership, and observable success criteria. The plan is static. It carries
+no status or run state.
 
 **Your tasks.** Decompose the objective, decide whether the spec changes, build the DAG with the
-tool, design task-level delegation, then emit the plan and confirm it.
+tool, then emit the plan and confirm it.
 
 ## How this fits other planning guidance
 
@@ -18,8 +18,8 @@ The default planning procedure owns investigation. Read the code, find the real 
 how the work should be done, and write that how into each task body. The executor follows the body
 and does not invent a second approach.
 
-This skill owns decomposition, the dependency DAG, file ownership, delegation, and the document
-shape. Where other guidance contradicts those points with an unordered task list, hand-drawn
+This skill owns decomposition, the dependency DAG, file ownership, and the document shape. Where
+other guidance contradicts those points with an unordered task list, hand-drawn
 ordering, or extra waves beyond serial goals, this skill wins.
 
 ## 1. Decompose
@@ -41,9 +41,8 @@ Every project file belongs to exactly one category:
 - `assets`, static resources that are none of the above
 
 Tie-break: `package.json` and CI go to `config`. Test files and fixtures go to `code`. README,
-product requirements, and implementation guidelines go to `docs`. Agent instruction documents,
-skills, and subagent definitions go to `docs`; their helper scripts and the tests over them go to
-`code`.
+product requirements, and implementation guidelines go to `docs`. Agent instruction documents and
+skills go to `docs`; their helper scripts and the tests over them go to `code`.
 
 Split rules:
 
@@ -105,23 +104,7 @@ On `error: cycle detected: ...` the decomposition is circular. Fix the pairs and
 empty goal, too many tasks in one goal and category, or a cross-goal pair, fix the input and re-run.
 Never hand-edit the tool's output.
 
-## 4. Design delegation
-
-Assign every task to either `main-agent` or `subagent`. Delegate only when either condition holds:
-
-- The task is search-dominated, such as code search, web or HTML research, log investigation, or
-  history search, and a final evidence-backed summary fulfills its objective without retaining the
-  extensive intermediate context.
-- The task is an independent coding workstream. Use at most two coding subagents in one goal: one
-  owns production source and one owns tests. Run them in parallel only when their files do not
-  overlap and both work from the same agreed behavior or interface.
-
-Keep short searches, integration, shared-file changes, cross-task decisions, and final synthesis on
-the main agent. Delegation chooses context boundaries, not an agent type or model.
-
-Every task must appear once in Task Execution. Do not add a required review stage.
-
-## 5. Emit the plan
+## 4. Emit the plan
 
 Generate the document shell from the same tool, which fills in every derived cell so nothing is
 transcribed by hand. Use the section 3 command with `--format scaffold --title "<objective>"` added.
@@ -163,9 +146,7 @@ later executes it, so keep them verbatim.
 - `## Task DAG` is the tool-generated table, unedited except for filling in each success criterion:
   `| Task # | Goal | Category | Task | Depends on | Success criterion |`. Never draw a separate
   dependency diagram.
-- `## Task Execution` is `| Task # | Executor | Rationale |`, one row per task. Executor is exactly
-  `main-agent` or `subagent`.
-- `## Tasks` comes after Task Execution and before Spec Sync, with one `### {Task #} {id}`
+- `## Tasks` comes after Task DAG and before Spec Sync, with one `### {Task #} {id}`
   subsection per task in `T` order. Each body has exactly Files, the create and modify paths in this
   task's category or `—` for read-only work; Consumes, prior artifacts or search scope; Produces,
   what later tasks rely on, or `—`; and Verify, the command or check that proves the success
@@ -177,5 +158,4 @@ later executes it, so keep them verbatim.
   document. Where the plan carries no spec sync task, keep the heading and write the one line saying
   no clause changes and why, with no empty Driven by rows.
 - `## Execution Guidelines` closes the plan. Goals are serial. Within a goal, ready tasks with no
-  edge and no overlapping files may run in parallel. Launch ready `subagent` tasks together. Keep
-  integration and final synthesis on the main agent.
+  edge and no overlapping files may run in parallel.

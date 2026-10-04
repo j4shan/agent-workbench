@@ -9,11 +9,10 @@ to the next, kept in one place instead of being re-derived or copy-pasted per re
 | --- | --- |
 | [`skills/`](skills/) | [Agent Skills](https://agentskills.io) folders — one directory per skill |
 | [`instructions/`](instructions/) | Instruction documents read by an agent — working conventions, review and reporting formats, authoring rules |
-| [`subagents/`](subagents/) | Cursor subagent definitions — Markdown files a parent agent can delegate to |
-| [`tests/`](tests/) | Tests over the executable helpers that skills ship — run from the repository root, never installed into a target project |
+| [`mcp/`](mcp/) | Local MCP servers that expose structured tools to compatible clients |
 
-MCP server definitions are also in scope for this repository; no directory has been designated for
-them yet.
+The documentation writer MCP is installed independently with `install-mcp.sh`; the general
+`install.sh` continues to install only skills and instructions.
 
 [`AGENTS.md`](AGENTS.md) carries the rules for authoring what lives here, addressed to an agent
 working in this repository. `CLAUDE.md` is a symlink to it, so Claude Code and Cursor read one file.
@@ -31,9 +30,7 @@ skills/
 ```
 
 A skill's `scripts/` are copied with it, so a skill cites its own helpers by a path relative to
-the *consuming* project's root. Tests over those helpers live in [`tests/`](tests/) at this
-repository's root instead, which `install.sh` does not copy, so they never reach a target project.
-Run them with `python3 -m unittest discover tests`.
+the *consuming* project's root.
 
 The `description` is what a client matches a task against, so it states both what the skill
 produces and the situations that should trigger it — including phrasings a user would actually
@@ -72,34 +69,18 @@ Write each one as a **paper of commands**, not a description of how things are:
 - never reference this repository, an installed location, or another project's configuration file.
   Where the instruction is read from varies with the environment; what it commands does not.
 
-### Subagents
-
-One Markdown file per worker, with YAML frontmatter (`name`, `description`, and optional `model`)
-followed by the prompt body. Cursor loads these when a parent agent delegates a task into an
-isolated context.
-
-```
-subagents/
-  <name>.md
-```
-
-Subagents are **opt-in at install time**. They copy only when `install.sh` is run with
-`--subagent`. A `README.md` in this directory is never installed.
-
 ## Install
 
 `install.sh` copies skills and instructions into either a **target project** (default) or the
-**current user's** client directories. Pass `--subagent` to also copy Cursor subagent definitions.
+**current user's** client directories.
 
 ```bash
 ./install.sh /path/to/project
 ./install.sh --scope project /path/to/project
 ./install.sh /path/to/project execution-planning
 ./install.sh /path/to/project execution-planning,another-skill
-./install.sh --scope project --subagent /path/to/project
 ./install.sh --scope user
 ./install.sh --scope user execution-planning
-./install.sh --scope user --subagent
 ```
 
 `--scope project` (the default) requires a project directory. `--scope user` takes no project
@@ -107,7 +88,7 @@ directory; a leftover argument that is a directory is an error. Omit the skill l
 every included skill. A comma-separated list installs only those named skills; an unknown name is
 an error.
 
-[`install.yaml`](install.yaml) is the inclusion list. Each skill, instruction, and subagent
+[`install.yaml`](install.yaml) is the inclusion list. Each skill and instruction
 defaults to `true`. Set a name to `false` to skip it. An item on disk but missing from the file
 is still installed.
 
@@ -120,7 +101,6 @@ The script refuses a project-scope install into this repository itself.
 | **Skills** | `<project>/.agents/skills/<name>/` |
 | **Cursor rules** | `<project>/.cursor/rules/<name>.mdc` |
 | **Claude Code rules** | `<project>/.claude/rules/<name>.md` |
-| **Subagents** (`--subagent`) | `<project>/.cursor/agents/<name>.md` |
 
 **User** (`--scope user`):
 
@@ -129,7 +109,6 @@ The script refuses a project-scope install into this repository itself.
 | **Skills** | `~/.cursor/skills/<name>/` and `~/.claude/skills/<name>/` |
 | **Cursor rules** | `~/.cursor/rules/<name>.mdc` |
 | **Claude Code rules** | `~/.claude/rules/<name>.md` |
-| **Subagents** (`--subagent`) | `~/.cursor/agents/<name>.md` |
 
 Cursor and Codex load `.agents/skills/` natively at project scope. Claude Code's documented
 project skill path is `.claude/skills/`; a project-scope install does not write a second skill
@@ -147,11 +126,36 @@ Where a destination already exists the script lists every collision and asks onc
 overwrite; answering `n` skips all existing items and installs the rest. Skill folders are replaced
 whole, so a file deleted here does not survive in an install.
 
-Restart the client afterwards — skills, rules, and subagents are read at session start.
+Restart the client afterwards — skills and rules are read at session start.
+
+## Install the documentation writer MCP
+
+`install-mcp.sh` independently installs the local `documentation-writer` stdio server and registers
+it with Codex, Claude Code, and Cursor. It supports macOS only. Python 3.10+ and an authenticated Codex
+CLI must already be available; user-scope Claude Code registration also requires the `claude` CLI.
+
+```bash
+./install-mcp.sh /path/to/project
+./install-mcp.sh --scope project --client codex,claude /path/to/project
+./install-mcp.sh --scope user
+./install-mcp.sh --scope user --client cursor
+```
+
+Project scope installs the runtime at
+`<project>/.agents/mcp/documentation-writer/` and writes the selected client registrations to
+`<project>/.codex/config.toml`, `<project>/.mcp.json`, and `<project>/.cursor/mcp.json`. User scope
+installs under `~/Library/Application Support/coding-harness/mcp/documentation-writer/` and updates
+the corresponding user configurations. `--client all` is the default.
+
+The server exposes `write_project_documentation`. A caller supplies finalized changes, changed
+component summaries, target documents, and an evidence manifest of absolute file paths. The server
+validates those boundaries, launches Codex with `gpt-6-sol` and medium reasoning, and rejects a run
+that changes anything outside the named target documents. See
+[`mcp/documentation-writer/README.md`](mcp/documentation-writer/README.md) for the brief contract.
 
 After a **project-scope** install, if earlier copies still exist at **user scope**, the script
 prints `rm` commands for those paths and does not delete them. Run the printed commands if you no
-longer want those skills, rules, and subagents applied to every project on the machine:
+longer want those skills and rules applied to every project on the machine:
 
 ```bash
 rm -rf ~/.cursor/skills/execution-planning
@@ -160,7 +164,6 @@ rm -rf ~/.cursor/skills/problem-presentation-format
 rm -rf ~/.claude/skills/problem-presentation-format
 rm -rf ~/.cursor/skills/project-metadata-guideline
 rm -rf ~/.claude/skills/project-metadata-guideline
-rm -f  ~/.cursor/agents/cursor-grok-4.6-high.md
 ```
 
 Earlier installs wrote those two as Cursor `.mdc` and Claude `.md` rule files. Those copies
@@ -176,7 +179,7 @@ rm -f ~/.claude/rules/problem-presentation-format.md \
 ## Contributing back
 
 Anything added here must be **general**: it must make sense in a repository that knows nothing
-about the project it came from. A skill, instruction, or subagent that names a specific spec file,
+about the project it came from. A skill, instruction, or MCP server that names a specific spec file,
 product, or directory layout belongs in that project, not in this one. Where a rule is genuinely
 useful but carries a project-specific detail, state the rule by the role the artifact plays rather
 than by its path — and never by the location it happens to be installed to, which varies with the

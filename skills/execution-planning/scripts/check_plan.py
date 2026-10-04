@@ -28,20 +28,17 @@ from task_dag import CATEGORIES, Slice, build  # noqa: E402
 
 DAG_HEADERS = ["Task #", "Goal", "Category", "Task", "Depends on", "Success criterion"]
 GOALS_HEADERS = ["Goal", "Tasks"]
-EXECUTION_HEADERS = ["Task #", "Executor", "Rationale"]
 SPEC_HEADERS = ["Clause", "Document", "Change", "Driven by"]
 
 REQUIRED_SECTIONS = [
     "Problem Statement",
     "Task DAG",
-    "Task Execution",
     "Tasks",
     "Spec Sync",
     "Execution Guidelines",
 ]
 
 BODY_FIELDS = ["Files", "Consumes", "Produces", "Verify"]
-EXECUTOR = re.compile(r"^(main-agent|subagent)$")
 SPEC_CHANGES = {"add", "amend", "remove"}
 EMPTY = {"", "—", "-", "–"}
 
@@ -279,30 +276,6 @@ def check_goals(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> N
             report.add(line, f"goal '{goal}' lists {cell}; the DAG has {by_goal[goal]}")
 
 
-def check_execution(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> None:
-    execution = doc.table_with_headers("Task Execution", EXECUTION_HEADERS)
-    if execution is None:
-        report.add(0, f"## Task Execution has no {' | '.join(EXECUTION_HEADERS)} table")
-        return
-
-    labels = [row["Task #"].strip() for row in dag.rows]
-    listed = [row["Task #"].strip() for row in execution.rows]
-    for label in labels:
-        if label not in listed:
-            report.add(execution.line, f"{label} has no Task Execution row")
-    for row, line in zip(execution.rows, execution.row_lines):
-        label = row["Task #"].strip()
-        if label not in labels:
-            report.add(line, f"{label} is assigned but is not on the DAG")
-        if listed.count(label) > 1:
-            report.add(line, f"{label} has more than one Task Execution row")
-        executor = row["Executor"].strip()
-        if not EXECUTOR.match(executor):
-            report.add(line, f"executor '{executor}' must be main-agent or subagent")
-        if row["Rationale"].strip() in EMPTY:
-            report.add(line, f"{label} has no execution rationale")
-
-
 def check_bodies(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> None:
     expected = [(row["Task #"].strip(), row["Task"].strip()) for row in dag.rows]
     found = [(body.label, body.id) for body in doc.task_bodies]
@@ -420,7 +393,6 @@ def main() -> int:
     dag, _ = check_dag(doc, report)
     if dag is not None:
         check_goals(doc, dag, report)
-        check_execution(doc, dag, report)
         check_bodies(doc, dag, report)
         check_spec_sync(doc, dag, report)
     return report.flush(args.plan)

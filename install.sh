@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install this repository's skills, instructions, and optional subagents.
+# Install this repository's skills and instructions.
 #
 # Each client is given the content in the shape it actually loads. Default
 # --scope project writes into a target project. --scope user writes into the
@@ -13,14 +13,12 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
     cat <<'EOF'
 Usage:
-  install.sh [--scope project] [--subagent] <project-dir> [skill,skill,...]
-  install.sh --scope user [--subagent] [skill,skill,...]
+  install.sh [--scope project] <project-dir> [skill,skill,...]
+  install.sh --scope user [skill,skill,...]
 
-Copy skills and instructions at the paths each client reads. Pass --subagent
-to also copy Cursor subagent definitions.
+Copy skills and instructions at the paths each client reads.
 
   --scope project|user   install destination (default: project)
-  --subagent             also copy subagents/*.md (except README.md)
   <project-dir>          target project root (required for --scope project)
   [skill,skill,...]      install only these skills (comma-separated names).
                          Omit to install every included skill.
@@ -33,13 +31,11 @@ Project destinations (--scope project):
   Skills          <project>/.agents/skills/<name>/
   Cursor rules    <project>/.cursor/rules/<name>.mdc
   Claude rules    <project>/.claude/rules/<name>.md
-  Subagents       <project>/.cursor/agents/<name>.md
 
 User destinations (--scope user):
   Skills          ~/.cursor/skills/<name>/ and ~/.claude/skills/<name>/
   Cursor rules    ~/.cursor/rules/<name>.mdc
   Claude rules    ~/.claude/rules/<name>.md
-  Subagents       ~/.cursor/agents/<name>.md
 EOF
 }
 
@@ -53,7 +49,6 @@ die() {
 # ------------------------------------------------------------------- flags
 
 scope=project
-want_subagents=0
 positionals=()
 
 while [[ $# -gt 0 ]]; do
@@ -69,10 +64,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --scope=*)
             scope="${1#--scope=}"
-            shift
-            ;;
-        --subagent)
-            want_subagents=1
             shift
             ;;
         --)
@@ -129,7 +120,7 @@ if [[ ! -f "$CONFIG" ]]; then
     exit 1
 fi
 
-# Prints true or false for kind (skills|instructions|subagents) and item name.
+# Prints true or false for kind (skills|instructions) and item name.
 # A name missing from install.yaml is true. Keys may carry .md.
 inclusion_default() {
     local kind="$1" name="$2"
@@ -172,22 +163,13 @@ for dir in "$SRC"/skills/*/; do
 done
 
 # README.md documents the directory for a human reading the repository; it is not
-# an instruction or subagent and must not be installed as one.
+# an instruction and must not be installed as one.
 instructions=()
 for file in "$SRC"/instructions/*.md; do
     [[ -f "$file" ]] || continue
     [[ "$(basename "$file")" == "README.md" ]] && continue
     instructions+=("$file")
 done
-
-subagents=()
-if [[ "$want_subagents" -eq 1 ]]; then
-    for file in "$SRC"/subagents/*.md; do
-        [[ -f "$file" ]] || continue
-        [[ "$(basename "$file")" == "README.md" ]] && continue
-        subagents+=("$file")
-    done
-fi
 
 if [[ -n "$skill_filter" ]]; then
     compact="${skill_filter//[[:space:]]/}"
@@ -271,29 +253,8 @@ else
     instructions=()
 fi
 
-included_subagents=()
-if [[ ${#subagents[@]} -gt 0 ]]; then
-    for file in "${subagents[@]}"; do
-        name="$(basename "$file" .md)"
-        inc="$(inclusion_default subagents "$name")" || exit 1
-        if [[ "$inc" == true ]]; then
-            included_subagents+=("$file")
-        fi
-    done
-fi
-if [[ ${#included_subagents[@]} -gt 0 ]]; then
-    subagents=("${included_subagents[@]}")
-else
-    subagents=()
-fi
-
-if [[ "$want_subagents" -eq 1 && ${#subagents[@]} -eq 0 ]]; then
-    echo "error: --subagent set but no included subagents found under $SRC/subagents" >&2
-    exit 1
-fi
-
-if [[ ${#skills[@]} -eq 0 && ${#instructions[@]} -eq 0 && ${#subagents[@]} -eq 0 ]]; then
-    echo "error: nothing to install — no skills, instructions, or subagents found under $SRC" >&2
+if [[ ${#skills[@]} -eq 0 && ${#instructions[@]} -eq 0 ]]; then
+    echo "error: nothing to install — no skills or instructions found under $SRC" >&2
     exit 1
 fi
 
@@ -304,13 +265,11 @@ if [[ "$scope" == project ]]; then
     claude_skills_roots=()
     cursor_rules_root="$PROJECT/.cursor/rules"
     claude_rules_root="$PROJECT/.claude/rules"
-    cursor_agents_root="$PROJECT/.cursor/agents"
 else
     cursor_skills_roots=("$HOME/.cursor/skills")
     claude_skills_roots=("$HOME/.claude/skills")
     cursor_rules_root="$HOME/.cursor/rules"
     claude_rules_root="$HOME/.claude/rules"
-    cursor_agents_root="$HOME/.cursor/agents"
 fi
 
 # ------------------------------------------------------------ collision handling
@@ -336,12 +295,6 @@ if [[ ${#instructions[@]} -gt 0 ]]; then
         name="$(basename "$instruction" .md)"
         [[ -e "$cursor_rules_root/${name}.mdc" ]] && collisions+=("$cursor_rules_root/${name}.mdc")
         [[ -e "$claude_rules_root/${name}.md" ]] && collisions+=("$claude_rules_root/${name}.md")
-    done
-fi
-if [[ ${#subagents[@]} -gt 0 ]]; then
-    for subagent in "${subagents[@]}"; do
-        name="$(basename "$subagent")"
-        [[ -e "$cursor_agents_root/$name" ]] && collisions+=("$cursor_agents_root/$name")
     done
 fi
 
@@ -410,9 +363,6 @@ if [[ ${#claude_skills_roots[@]} -gt 0 ]]; then
         mkdir -p "$root"
     done
 fi
-if [[ ${#subagents[@]} -gt 0 ]]; then
-    mkdir -p "$cursor_agents_root"
-fi
 
 if [[ "$scope" == project ]]; then
     echo "== $PROJECT"
@@ -458,22 +408,6 @@ if [[ ${#instructions[@]} -gt 0 ]]; then
     done
 fi
 
-if [[ ${#subagents[@]} -gt 0 ]]; then
-    for subagent in "${subagents[@]}"; do
-        name="$(basename "$subagent")"
-        dest="$cursor_agents_root/$name"
-        if should_write "$dest"; then
-            mkdir -p "$cursor_agents_root"
-            cp "$subagent" "$dest"
-            echo "   subagent          ${name%.md} -> $dest"
-            installed=$((installed + 1))
-        else
-            echo "   subagent          ${name%.md} -- skipped (exists)"
-            skipped=$((skipped + 1))
-        fi
-    done
-fi
-
 echo
 
 # ----------------------------------------------------------------------- report
@@ -481,7 +415,7 @@ echo
 echo "Installed $installed item(s), skipped $skipped."
 
 echo
-echo "Restart the client — skills, rules, and subagents are read at session start."
+echo "Restart the client — skills and rules are read at session start."
 
 # -------------------------------------------------------- user-scope leftovers
 
@@ -505,13 +439,6 @@ if [[ ${#instructions[@]} -gt 0 ]]; then
         [[ -e "$HOME/.claude/rules/${name}.md" ]] && leftover_files+=("$HOME/.claude/rules/${name}.md")
     done
 fi
-if [[ ${#subagents[@]} -gt 0 ]]; then
-    for subagent in "${subagents[@]}"; do
-        name="$(basename "$subagent")"
-        [[ -e "$HOME/.cursor/agents/$name" ]] && leftover_files+=("$HOME/.cursor/agents/$name")
-    done
-fi
-
 echo
 if [[ ${#leftover_dirs[@]} -eq 0 && ${#leftover_files[@]} -eq 0 ]]; then
     echo "No user-scope leftovers from an earlier install."
