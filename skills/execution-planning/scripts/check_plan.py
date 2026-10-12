@@ -3,7 +3,7 @@
 
 Print one line per violation and exit 1, or print nothing and exit 0. The
 checker reads the document only. It cannot judge whether a success criterion is
-observable or whether the spec sync decision is right; a person does that.
+observable; a person does that.
 
 The strongest check rebuilds the graph: it takes the tasks and the intra-goal
 edges as the table states them, re-runs the generator, and compares. Numbering
@@ -28,18 +28,15 @@ from task_dag import CATEGORIES, Slice, build  # noqa: E402
 
 DAG_HEADERS = ["Task #", "Goal", "Category", "Task", "Depends on", "Success criterion"]
 GOALS_HEADERS = ["Goal", "Tasks"]
-SPEC_HEADERS = ["Clause", "Document", "Change", "Driven by"]
 
 REQUIRED_SECTIONS = [
     "Problem Statement",
     "Task DAG",
     "Tasks",
-    "Spec Sync",
     "Execution Guidelines",
 ]
 
 BODY_FIELDS = ["Files", "Consumes", "Produces", "Verify"]
-SPEC_CHANGES = {"add", "amend", "remove"}
 EMPTY = {"", "—", "-", "–"}
 
 CONFIG_NAMES = {
@@ -346,36 +343,6 @@ def check_bodies(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> 
             )
 
 
-def check_spec_sync(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> None:
-    section = doc.section("Spec Sync")
-    if section is None:
-        return
-    labels = {row["Task #"].strip() for row in dag.rows}
-    table = doc.table_with_headers("Spec Sync", SPEC_HEADERS)
-    if table is None:
-        body = [
-            doc.lines[i].strip()
-            for i in range(section.start, min(section.end, len(doc.lines)))
-            if doc.lines[i].strip() and not doc.lines[i].lstrip().startswith("<!--")
-        ]
-        if not body:
-            report.add(section.start, "## Spec Sync is empty; state the clauses or say no clause changes and why")
-        return
-    for row, line in zip(table.rows, table.row_lines):
-        clause = row["Clause"].strip()
-        if clause in EMPTY:
-            report.add(line, "Spec Sync row has no clause")
-        change = row["Change"].strip().lower()
-        if change not in SPEC_CHANGES:
-            report.add(line, f"Spec Sync Change '{change}' must be add, amend, or remove")
-        driven = plan_doc.split_refs(row["Driven by"])
-        if not driven:
-            report.add(line, f"Spec Sync clause '{clause}' has no Driven by")
-        for ref in driven:
-            if ref not in labels:
-                report.add(line, f"Spec Sync Driven by names '{ref}', which is not on the DAG")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("plan", help="path to the plan file, or - for stdin")
@@ -394,7 +361,6 @@ def main() -> int:
     if dag is not None:
         check_goals(doc, dag, report)
         check_bodies(doc, dag, report)
-        check_spec_sync(doc, dag, report)
     return report.flush(args.plan)
 
 

@@ -19,7 +19,7 @@ task per category, except `code`, which may have two.
 Usage:
     task_dag.py --goal-order add-cache,ship \\
         --task add-cache:code:implement --task add-cache:config:wire-ci \\
-        --task ship:docs:spec-sync "implement > wire-ci"
+        --task ship:docs:usage-notes "implement > wire-ci"
     task_dag.py --format scaffold --title "Add caching" \\
         --task add-cache:code:implement --task add-cache:docs:notes
     echo '{"goals":["g"],"tasks":[{"id":"a","goal":"g","category":"code"}],"edges":[]}' \\
@@ -366,25 +366,10 @@ def render_scaffold(dag: dict, title: str) -> str:
             "",
             *render_task_bodies(dag),
             "",
-            "## Spec Sync",
-            "",
-            "<!-- If no spec sync slice: replace this table with one line saying no clause",
-            "     changes, and why. Driven by must be a Task # on the DAG. -->",
-            "",
-            "| Clause | Document | Change | Driven by |",
-            "|---|---|---|---|",
-            "| <clause id or heading> | <product requirements / implementation guidelines> "
-            "| <add / amend / remove> | <Task #> |",
-            "",
             "## Execution Guidelines",
             "",
             "Do not start any task until `Confirm plan? [1. Yes / 2. No]` has been",
             "answered `1`. Wait for the answer. On `2`, revise the plan; start no task.",
-            "",
-            "If this plan has a spec sync task, show the `## Spec Sync` table and ask",
-            "`Confirm spec update? [1. Yes / 2. No]` before any task starts. Wait for",
-            "the answer. On `2`, drop that task, write one line here saying why, and",
-            "re-run the tool so the numbering stays generated.",
             "",
             "Goals are serial. Within a goal, ready tasks with no edge and no",
             "overlapping files may run in parallel.",

@@ -41,7 +41,7 @@ Bundled skills:
 | `documentation-writer` | Delegate bounded README, design-specification, and other human-facing documentation updates to Codex with a distilled final-state brief. |
 | `execution-planning` | Build execution plans and task DAGs for multi-step work. |
 | `problem-presentation-format` | Report defects and open decisions in a fixed numbered layout. |
-| `project-metadata-guideline` | Place project-owned docs and assets in a fixed tree (`always: true`). |
+| `project-metadata-guideline` | Keep product, system-design, and project-configuration documents in a fixed tree, changed only after a confirmed preview (`always: true`). |
 | `technical-writing` | Produce teaching-style technical explanations. |
 | `visualize_with_drawio` | Create draw.io visualizations from written specifications. |
 
