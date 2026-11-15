@@ -38,11 +38,11 @@ Bundled skills:
 
 | Skill | Purpose |
 | --- | --- |
-| `documentation-writer` | Delegate bounded README, design-specification, and other human-facing documentation updates to Codex with a distilled final-state brief. |
+| `documentation-writer` | Delegate human-facing documentation to Codex for readable prose when requested; use plain-language context or an optional annotated JSON request format. |
 | `execution-planning` | Build execution plans and task DAGs for multi-step work. |
-| `problem-presentation-format` | Report defects and open decisions in a fixed numbered layout. |
+| `problem-presentation-format` | **Deprecated:** retained for reference and excluded from default installation. |
 | `project-metadata-guideline` | Keep product, system-design, and project-configuration documents in a fixed tree, changed only after a confirmed preview (`always: true`). |
-| `technical-writing` | Produce teaching-style technical explanations. |
+| `technical-writing` | **Deprecated:** retained for reference and excluded from default installation. |
 | `visualize_with_drawio` | Create draw.io visualizations from written specifications. |
 
 ### Instructions
@@ -119,12 +119,13 @@ never installed.
 Paths written inside a skill are relative to the *consuming* project's root —
 `.agents/skills/<name>/scripts/…` — because that is where the shell starts.
 
-The `documentation-writer` skill includes an on-demand launcher rather than a resident service. A
-coordinating agent supplies finalized changes, changed-component summaries, target documents, and
-an absolute evidence manifest. The launcher validates those boundaries, starts an ephemeral Codex
-run with `gpt-6-sol` and medium reasoning, and fails if the run changes a file outside the named
-documents. It first looks for `codex` on `PATH`, then for the binary bundled with the Codex or
-ChatGPT macOS app.
+Use `documentation-writer` when asking Claude to delegate documentation writing or revision to a
+Codex subagent for GPT's prose quality. The skill supplies writing instructions and a direct
+`codex exec` command, using `gpt-6-sol` with medium reasoning unless requested otherwise. Provide
+the goal, target documents, and useful context in plain language, or use the optional annotated
+JSON Schema in `skills/documentation-writer/references/brief.schema.json` for consistent requests.
+The calling agent reviews the resulting prose and diff; there is no Python launcher or automatic
+file-change audit. A code change alone does not trigger documentation delegation.
 
 Where a destination already exists the script lists every collision and asks once, defaulting to
 overwrite; answering `n` skips all existing items and installs the rest. Skill folders are replaced

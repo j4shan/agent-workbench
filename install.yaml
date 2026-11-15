@@ -6,6 +6,6 @@ skills:
   documentation-writer: true
   execution-planning: true
   visualize_with_drawio: true
-  technical-writing: true
-  problem-presentation-format: true
+  technical-writing: false
+  problem-presentation-format: false
   project-metadata-guideline: true

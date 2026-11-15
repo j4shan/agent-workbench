@@ -1,10 +1,12 @@
 ---
 name: technical-writing
-description: Produce a technical explanation as a linearized teaching sequence — mental model, term and symbol definitions, formulas, optional figures, supporting arguments, and takeaways. Invoke when writing a paper, lecture, design note, or any teaching-style technical document.
+description: Deprecated and retained for reference only. Produce a technical explanation as a linearized teaching sequence — mental model, term and symbol definitions, formulas, optional figures, supporting arguments, and takeaways.
 disable-model-invocation: true
 ---
 
 # Technical writing
+
+**Deprecated.** Retain this skill for reference. Do not install it by default.
 
 **Objective.** Get a topic across to readers as a teaching presentation: one acyclic
 learning sequence, defined terms where they appear, and a title that names the subject.

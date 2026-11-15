@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Documentation delegation request",
+  "description": "Optional request format for a documentation-writing subagent. Use project-relative paths within the CLI working root. Filesystem checks belong to the caller; this schema describes the request only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["objective", "target_documents"],
+  "properties": {
+    "objective": {
+      "type": "string",
+      "minLength": 1,
+      "description": "State what the writer should write, revise, or clarify."
+    },
+    "target_documents": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1},
+      "description": "List project-relative paths to the human-facing documents the writer may edit. List missing documents only when creation is authorized."
+    },
+    "audience": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identify the intended readers and their expected background when relevant."
+    },
+    "desired_reader_outcome": {
+      "type": "string",
+      "minLength": 1,
+      "description": "State what readers should understand or be able to do after reading."
+    },
+    "finalized_changes": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "For implementation or design updates, summarize the resulting behavior and agreed decisions. Omit abandoned approaches and debugging history. Omit this field for writing tasks without such changes."
+    },
+    "evidence_manifest": {
+      "type": "array",
+      "description": "Optionally identify a selective set of existing files that support the request. Do not require an evidence manifest for every writing task.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "relevance"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Give a project-relative path to an existing evidence file."
+          },
+          "relevance": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Explain what this file helps the writer verify or understand."
+          },
+          "facts": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "description": "Optionally summarize the relevant facts supported by this file."
+          }
+        }
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "List task-specific limits, required terminology, or structure to preserve."
+    },
+    "validation": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "List relevant documentation checks the writer may run. Omit when none are needed."
+    },
+    "uncertainties": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "List unresolved facts, proposals, or open questions the writer must not present as agreed behavior or decisions."
+    },
+    "allow_create": {
+      "type": "boolean",
+      "default": false,
+      "description": "Set true to authorize creating missing target documents. When absent or false, update existing documents only."
+    }
+  }
+}
