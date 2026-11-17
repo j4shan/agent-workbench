@@ -23,7 +23,7 @@ Usage:
     task_dag.py --format scaffold --title "Add caching" \\
         --task add-cache:code:implement --task add-cache:docs:notes
     echo '{"goals":["g"],"tasks":[{"id":"a","goal":"g","category":"code"}],"edges":[]}' \\
-        | task_dag.py
+        | task_dag.py --input -
     task_dag.py --format table --task g:code:a --task g:config:b "a > b"
 
 A cycle, an empty goal, too many tasks in one goal and category, or a cross-goal
@@ -36,18 +36,18 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
 
 SEPARATORS = ("->", ">")
 CATEGORIES = ("code", "config", "docs", "assets")
 
 
+@dataclass
 class Slice:
-    __slots__ = ("id", "goal", "category")
-
-    def __init__(self, id: str, goal: str, category: str) -> None:
-        self.id = id
-        self.goal = goal
-        self.category = category
+    id: str
+    goal: str
+    category: str
 
 
 def parse_pair(raw: str) -> tuple[str, str]:
@@ -66,8 +66,6 @@ def parse_slice(raw: str) -> Slice:
     if len(parts) != 3 or not all(p.strip() for p in parts):
         raise ValueError(f"not a slice (expected 'goal:category:id'): {raw!r}")
     goal, category, name = (p.strip() for p in parts)
-    if category not in CATEGORIES:
-        raise ValueError(f"unknown category {category!r} (expected {', '.join(CATEGORIES)})")
     return Slice(name, goal, category)
 
 
@@ -88,13 +86,26 @@ def _slices_from_json_tasks(tasks: object) -> list[Slice]:
     for item in tasks:
         if not isinstance(item, dict):
             raise ValueError("JSON tasks must be objects {id, goal, category}")
-        name, goal, category = item.get("id"), item.get("goal"), item.get("category")
-        if not name or not goal or not category:
-            raise ValueError(f"JSON task missing id, goal, or category: {item!r}")
-        if category not in CATEGORIES:
-            raise ValueError(f"unknown category {category!r} (expected {', '.join(CATEGORIES)})")
-        slices.append(Slice(str(name), str(goal), str(category)))
+        slices.append(Slice(item.get("id"), item.get("goal"), item.get("category")))
     return slices
+
+
+def load_spec(source: str) -> tuple[list[Slice], list[tuple[str, str]], list[str]]:
+    """Read JSON from an explicit file, or from stdin only when source is '-'."""
+    text = sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8")
+    payload = json.loads(text)
+    if not isinstance(payload, dict):
+        raise ValueError("JSON input must be an object with tasks, edges, and goals")
+    edges, goals = payload.get("edges", []), payload.get("goals", [])
+    if not isinstance(goals, list):
+        raise ValueError("JSON goals must be a list")
+    if not isinstance(edges, list) or any(
+        not isinstance(edge, list) or len(edge) != 2
+        or any(not isinstance(name, str) or not name.strip() for name in edge)
+        for edge in edges
+    ):
+        raise ValueError("JSON edges must be pairs of task ids")
+    return _slices_from_json_tasks(payload.get("tasks", [])), [tuple(edge) for edge in edges], goals
 
 
 def insert_goal_cuts(
@@ -143,19 +154,18 @@ def build(
     seen_ids: list[str] = []
     slices_by_id: dict[str, Slice] = {}
     for sl in slices:
+        if any(not isinstance(value, str) or not value.strip() for value in (sl.id, sl.goal)):
+            raise ValueError("each task requires nonempty string id and goal")
+        if sl.category not in CATEGORIES:
+            raise ValueError(f"unknown category {sl.category!r} (expected {', '.join(CATEGORIES)})")
         if sl.id in slices_by_id:
             raise ValueError(f"duplicate task id: {sl.id!r}")
         seen_ids.append(sl.id)
         slices_by_id[sl.id] = sl
 
-    if not goal_order:
-        inferred: list[str] = []
-        for sl in slices:
-            if sl.goal not in inferred:
-                inferred.append(sl.goal)
-        goal_order = inferred
-    else:
-        goal_order = list(dict.fromkeys(goal_order))
+    if any(not isinstance(goal, str) or not goal.strip() for goal in goal_order):
+        raise ValueError("goal ids must be nonempty strings")
+    goal_order = list(dict.fromkeys(goal_order or [sl.goal for sl in slices]))
 
     unknown_goals = sorted({sl.goal for sl in slices} - set(goal_order))
     if unknown_goals:
@@ -190,7 +200,7 @@ def build(
     order_seen: list[str] = []
     for goal in goal_order:
         for name in seen_ids:
-            if slices_by_id[name].goal == goal and name not in order_seen:
+            if slices_by_id[name].goal == goal:
                 order_seen.append(name)
 
     prereqs: dict[str, list[str]] = {name: [] for name in order_seen}
@@ -214,6 +224,16 @@ def build(
         ordered += ready
         placed.update(ready)
         remaining = [n for n in remaining if n not in placed]
+
+    # A direct edge is redundant when another predecessor already reaches its source.
+    ancestors: dict[str, set[str]] = {}
+    for name in ordered:
+        ancestors[name] = set(prereqs[name])
+        for predecessor in prereqs[name]:
+            ancestors[name].update(ancestors[predecessor])
+    for src, dst in planner_edges:
+        if any(src in ancestors[other] for other in prereqs[dst] if other != src):
+            raise ValueError(f"redundant dependency {src!r} > {dst!r}: write only immediate edges")
 
     # Keep `number` as an int so sorts stay numeric. `label` is the printed
     # form (`T1`). Mixing them would put T10 before T9.
@@ -395,6 +415,7 @@ RENDERERS = {
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("pairs", nargs="*", help="intra-goal pairs, 'prerequisite > dependent'")
+    parser.add_argument("--input", metavar="FILE", help="JSON specification file; use '-' explicitly for stdin")
     parser.add_argument(
         "--task",
         "--slice",
@@ -423,17 +444,16 @@ def main() -> int:
         pairs = list(args.pairs)
         slices = [parse_slice(s) for s in args.slices]
         goal_order = parse_goal_order(args.goal_order)
-        if not sys.stdin.isatty() and not pairs and not slices:
-            payload = json.loads(sys.stdin.read() or "{}")
-            slices += _slices_from_json_tasks(payload.get("tasks", []))
-            pairs += [f"{src} > {dst}" for src, dst in payload.get("edges", [])]
-            if not goal_order:
-                raw_goals = payload.get("goals", [])
-                if isinstance(raw_goals, list):
-                    goal_order = [str(g) for g in raw_goals if g]
         edges = [parse_pair(raw) for raw in pairs]
+        if args.input:
+            if slices or pairs:
+                raise ValueError("use --input or --task/pairs, not both")
+            slices, edges, input_goals = load_spec(args.input)
+            goal_order = goal_order or input_goals
+        if not slices:
+            raise ValueError("no tasks given; use --task or --input FILE (--input - reads stdin)")
         dag = build(edges, slices, goal_order)
-    except ValueError as exc:
+    except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

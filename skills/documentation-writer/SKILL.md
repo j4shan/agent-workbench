@@ -56,17 +56,33 @@ Finish by reporting changed documents, what you clarified, and any remaining unc
 Task context:
 ```
 
-Run from the project root, replacing the request-file path with the file you created:
+Retrieve the general `content-writer` role from its user-owned configuration. Each role file is
+`["model", "reasoning-effort"]`. Read one snapshot so an atomic update cannot mix the two values.
+Run this complete command from the project root, substituting the request file you created:
 
 ```bash
-codex exec --ephemeral --ignore-user-config \
-  --sandbox workspace-write --model gpt-6-sol \
-  --config 'model_reasoning_effort="medium"' \
-  --cd "$PWD" - < "/absolute/path/to/documentation-request.txt"
+role_dir="${SUBAGENT_MODELS_DIR-$HOME/Library/Application Support/subagent-models}"
+case "$role_dir" in /*) ;; *) printf 'Configuration directory must be absolute\n' >&2; exit 1 ;; esac
+role_config="$(/usr/bin/plutil -convert json -o - "$role_dir/content-writer.json")" || exit 1
+array_length="$(/usr/bin/plutil -extract settings raw -expect array -o - - <<< "{\"settings\":$role_config}")" || exit 1
+[[ "$array_length" == 2 ]] || { printf 'Expected exactly two role settings\n' >&2; exit 1; }
+model="$(/usr/bin/plutil -extract 0 raw -expect string -o - - <<< "$role_config")" || exit 1
+effort="$(/usr/bin/plutil -extract 1 raw -expect string -o - - <<< "$role_config")" || exit 1
+"$HOME/.local/bin/gpt-exec" \
+  --model "$model" --reasoning-effort "$effort" \
+  --sandbox workspace-write --project "$PWD" \
+  --prompt-file "/absolute/path/to/documentation-request.txt"
 ```
 
-Use the requested model or reasoning effort when the user specifies either. If `codex` is not on
-`PATH`, locate an installed executable before invoking it.
+If the user explicitly requests a model or effort for this call, replace only that local variable
+before invoking `gpt-exec`. Do not update stored preferences. Never pin a model version in this skill
+or substitute a fallback. When configuration or the installed command is missing, report the setup
+needed; do not create machine configuration or install tools as part of a writing request. If Codex
+is not on `PATH`, locate an installed executable and add its directory for the invocation.
+
+Let `gpt-exec` redirect stdin from the finite request file and preserve Codex's status. Keep background
+scheduling, monitoring, and cancellation with the calling process runner. A launched process is not
+a completed writing task.
 
 ## 3. Review the result
 

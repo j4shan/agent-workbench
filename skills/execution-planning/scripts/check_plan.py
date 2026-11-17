@@ -24,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import plan_doc  # noqa: E402
-from task_dag import CATEGORIES, Slice, build  # noqa: E402
+from task_dag import Slice, build  # noqa: E402
 
 DAG_HEADERS = ["Task #", "Goal", "Category", "Task", "Depends on", "Success criterion"]
 GOALS_HEADERS = ["Goal", "Tasks"]
@@ -54,13 +54,21 @@ ASSET_SUFFIXES = {
 }
 
 
+def path_text(entry: str) -> str:
+    """Read a Files entry, preserving spaces inside a backtick-quoted path."""
+    text = entry.lstrip("-* ").strip()
+    if text.startswith("`"):
+        return text[1:].split("`", 1)[0]
+    return text.split(" (")[0].split(", ")[0].strip()
+
+
 def classify(path: str) -> str | None:
     """Return the category a path belongs to, or None when it is not clear.
 
     Follows the tie-breaks the skill states. Returns None rather than guessing,
     so an unrecognised path never produces a finding.
     """
-    clean = path.strip().strip("`").split()[0] if path.strip() else ""
+    clean = path_text(path)
     if not clean:
         return None
     lower = clean.lower()
@@ -85,7 +93,7 @@ def classify(path: str) -> str | None:
 
 
 def is_test_path(path: str) -> bool:
-    clean = path.strip().strip("`").split()[0] if path.strip() else ""
+    clean = path_text(path)
     lower = clean.lower()
     name = lower.rsplit("/", 1)[-1]
     return (
@@ -105,15 +113,9 @@ class Report:
     def add(self, line: int, message: str) -> None:
         self.findings.append((line, message))
 
-    def flush(self, source: str) -> int:
-        for line, message in sorted(self.findings):
-            where = f"{source}:{line}" if line else source
-            print(f"{where}: {message}")
-        return 1 if self.findings else 0
-
 
 def check_sections(doc: plan_doc.PlanDoc, report: Report) -> None:
-    present = [s.title for s in doc.sections if s.level == 2]
+    present = [s.title for s in doc.sections]
     for title in REQUIRED_SECTIONS:
         if title not in present:
             report.add(0, f"missing required section '## {title}'")
@@ -124,13 +126,7 @@ def check_sections(doc: plan_doc.PlanDoc, report: Report) -> None:
 
 
 def check_placeholders(doc: plan_doc.PlanDoc, report: Report) -> None:
-    fenced = False
-    for i, raw in enumerate(doc.lines, start=1):
-        if raw.lstrip().startswith("```"):
-            fenced = not fenced
-            continue
-        if fenced:
-            continue
+    for i, raw in enumerate(doc.structure, start=1):
         if plan_doc.SCAFFOLD_COMMENT.search(raw):
             report.add(i, "scaffold comment left in the plan")
         stripped = plan_doc.SCAFFOLD_COMMENT.sub("", raw)
@@ -142,34 +138,14 @@ def check_placeholders(doc: plan_doc.PlanDoc, report: Report) -> None:
 
 def rebuild(dag: plan_doc.Table, report: Report) -> dict | None:
     """Re-run the generator on what the table states, and compare."""
-    slices: list[Slice] = []
-    goal_order: list[str] = []
-    declared: dict[str, str] = {}
-    for row, line in zip(dag.rows, dag.row_lines):
-        label, goal, category, task_id = (
-            row["Task #"].strip(), row["Goal"].strip(),
-            row["Category"].strip(), row["Task"].strip(),
-        )
-        if plan_doc.task_number(label) is None:
-            report.add(line, f"Task # '{label}' is not a T<n> label")
-            return None
-        if category not in CATEGORIES:
-            report.add(line, f"unknown category '{category}'")
-            return None
-        if not task_id:
-            report.add(line, "empty Task id")
-            return None
-        if goal not in goal_order:
-            goal_order.append(goal)
-        slices.append(Slice(task_id, goal, category))
-        declared[label] = task_id
-
     numbers = [plan_doc.task_number(row["Task #"]) for row in dag.rows]
     if numbers != list(range(1, len(numbers) + 1)):
         report.add(dag.line, f"Task # column is not T1..T{len(numbers)} in order")
         return None
 
-    by_label = {label: task_id for label, task_id in declared.items()}
+    slices = [Slice(row["Task"].strip(), row["Goal"].strip(), row["Category"].strip()) for row in dag.rows]
+    goal_order = list(dict.fromkeys(task.goal for task in slices))
+    by_label = {row["Task #"].strip(): row["Task"].strip() for row in dag.rows}
     intra: list[tuple[str, str]] = []
     goal_of = {s.id: s.goal for s in slices}
     for row, line in zip(dag.rows, dag.row_lines):
@@ -189,42 +165,26 @@ def rebuild(dag: plan_doc.Table, report: Report) -> dict | None:
         return None
 
 
-def check_dag(doc: plan_doc.PlanDoc, report: Report) -> tuple[plan_doc.Table | None, dict | None]:
+def check_dag(doc: plan_doc.PlanDoc, report: Report) -> plan_doc.Table | None:
     tables = doc.tables.get("Task DAG", [])
     if not tables:
         report.add(0, "## Task DAG has no table")
-        return None, None
+        return None
     dag = tables[0]
     if dag.headers != DAG_HEADERS:
         report.add(dag.line, f"Task DAG columns must be {' | '.join(DAG_HEADERS)}")
-        return None, None
+        return None
     if not dag.rows:
         report.add(dag.line, "Task DAG has no rows")
-        return None, None
+        return None
 
-    seen: set[str] = set()
     for row, line in zip(dag.rows, dag.row_lines):
-        task_id = row["Task"].strip()
-        if task_id in seen:
-            report.add(line, f"duplicate task id '{task_id}'")
-        seen.add(task_id)
         if row["Success criterion"].strip() in EMPTY:
             report.add(line, f"{row['Task #'].strip()} has no success criterion")
 
-    pairs: dict[tuple[str, str], list[str]] = {}
-    for row, line in zip(dag.rows, dag.row_lines):
-        key = (row["Goal"].strip(), row["Category"].strip())
-        pairs.setdefault(key, []).append(row["Task"].strip())
-        limit = 2 if key[1] == "code" else 1
-        if len(pairs[key]) > limit:
-            report.add(
-                line,
-                f"goal '{key[0]}' has too many {key[1]} tasks: {', '.join(pairs[key])}",
-            )
-
     rebuilt = rebuild(dag, report)
     if rebuilt is None:
-        return dag, None
+        return dag
 
     expected_rows = {
         task["label"]: (task["goal"], task["category"], task["id"],
@@ -243,7 +203,7 @@ def check_dag(doc: plan_doc.PlanDoc, report: Report) -> tuple[plan_doc.Table | N
             report.add(line, f"{label} Depends on should be '{shown}'; re-run the tool")
         if (row["Goal"].strip(), row["Category"].strip(), row["Task"].strip()) != want[:3]:
             report.add(line, f"{label} does not match the rebuilt graph; re-run the tool")
-    return dag, rebuilt
+    return dag
 
 
 def check_goals(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> None:
@@ -296,17 +256,10 @@ def check_bodies(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> 
                 # Files, Consumes, and Produces may legitimately be the em dash;
                 # Verify may not.
                 report.add(body.line, f"{body.label} **{name}** is empty")
-        extra = set(body.fields) - set(BODY_FIELDS)
-        if extra:
-            report.add(body.line, f"{body.label} body has unexpected fields: {', '.join(sorted(extra))}")
-
         want = category_of.get(body.label)
         paths_by_label[body.label] = []
         for entry in body.fields.get("Files", []):
-            text = entry.lstrip("-* ").strip()
-            if not text:
-                continue
-            path = text.split("(")[0].split(",")[0].strip().strip("`")
+            path = path_text(entry)
             if path in EMPTY:
                 continue
             paths_by_label[body.label].append(path)
@@ -343,25 +296,34 @@ def check_bodies(doc: plan_doc.PlanDoc, dag: plan_doc.Table, report: Report) -> 
             )
 
 
+def validate_plan(path: str | Path) -> list[tuple[int, str]]:
+    """Return sorted (source line, message) findings without printing or editing files."""
+    doc = plan_doc.load(path)
+    report = Report()
+    check_sections(doc, report)
+    check_placeholders(doc, report)
+    dag = check_dag(doc, report)
+    if dag is not None:
+        check_goals(doc, dag, report)
+        check_bodies(doc, dag, report)
+    return sorted(report.findings)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("plan", help="path to the plan file, or - for stdin")
     args = parser.parse_args()
 
     try:
-        doc = plan_doc.load(args.plan)
+        findings = validate_plan(args.plan)
     except OSError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    report = Report()
-    check_sections(doc, report)
-    check_placeholders(doc, report)
-    dag, _ = check_dag(doc, report)
-    if dag is not None:
-        check_goals(doc, dag, report)
-        check_bodies(doc, dag, report)
-    return report.flush(args.plan)
+    for line, message in findings:
+        where = f"{args.plan}:{line}" if line else args.plan
+        print(f"{where}: {message}")
+    return int(bool(findings))
 
 
 if __name__ == "__main__":

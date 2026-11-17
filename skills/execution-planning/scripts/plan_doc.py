@@ -15,12 +15,32 @@ from __future__ import annotations
 import re
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 
 TASK_HEADING = re.compile(r"^###\s+(T\d+)\s+(\S.*?)\s*$")
 FIELD_LABEL = re.compile(r"^\*\*(Files|Consumes|Produces|Verify)\*\*\s*$")
 PLACEHOLDER = re.compile(r"<[^<>]+>")
 SCAFFOLD_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 TASK_LABEL = re.compile(r"^T(\d+)$")
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+
+
+def visible_lines(lines: list[str]) -> list[str]:
+    """Blank fenced code without changing source line numbers."""
+    visible = []
+    marker, length = "", 0
+    for line in lines:
+        fence = FENCE.match(line)
+        if marker:
+            visible.append("")
+            if fence and fence[1][0] == marker and len(fence[1]) >= length and not fence[2].strip():
+                marker, length = "", 0
+        elif fence:
+            marker, length = fence[1][0], len(fence[1])
+            visible.append("")
+        else:
+            visible.append(line)
+    return visible
 
 
 @dataclass
@@ -29,9 +49,6 @@ class Table:
     rows: list[dict[str, str]]
     line: int
     row_lines: list[int] = field(default_factory=list)
-
-    def column(self, name: str) -> list[str]:
-        return [row.get(name, "") for row in self.rows]
 
 
 @dataclass
@@ -45,7 +62,6 @@ class TaskBody:
 @dataclass
 class Section:
     title: str
-    level: int
     start: int
     end: int
 
@@ -53,15 +69,10 @@ class Section:
 @dataclass
 class PlanDoc:
     lines: list[str]
+    structure: list[str]
     sections: list[Section]
     tables: dict[str, list[Table]]
     task_bodies: list[TaskBody]
-
-    def section(self, title: str) -> Section | None:
-        for sec in self.sections:
-            if sec.title == title:
-                return sec
-        return None
 
     def table_with_headers(self, title: str, headers: list[str]) -> Table | None:
         """Return the first table in `title` whose headers match exactly."""
@@ -69,10 +80,6 @@ class PlanDoc:
             if table.headers == headers:
                 return table
         return None
-
-    def first_table(self, title: str) -> Table | None:
-        tables = self.tables.get(title, [])
-        return tables[0] if tables else None
 
 
 def _split_row(raw: str) -> list[str]:
@@ -94,17 +101,12 @@ def _looks_like_row(raw: str) -> bool:
 
 
 def parse_sections(lines: list[str]) -> list[Section]:
+    """Find the level-two sections used by the plan contract."""
     heads: list[Section] = []
-    fenced = False
     for i, raw in enumerate(lines):
-        if raw.lstrip().startswith("```"):
-            fenced = not fenced
-            continue
-        if fenced:
-            continue
-        match = re.match(r"^(#{1,6})\s+(\S.*?)\s*$", raw)
+        match = re.match(r"^##\s+(\S.*?)\s*$", raw)
         if match:
-            heads.append(Section(match.group(2), len(match.group(1)), i + 1, len(lines)))
+            heads.append(Section(match[1], i + 1, len(lines)))
     for earlier, later in zip(heads, heads[1:]):
         earlier.end = later.start - 1
     return heads
@@ -133,13 +135,13 @@ def parse_tables(lines: list[str], start: int, end: int) -> list[Table]:
     return tables
 
 
-def parse_task_bodies(lines: list[str], start: int, end: int) -> list[TaskBody]:
+def parse_task_bodies(lines: list[str], structure: list[str], start: int, end: int) -> list[TaskBody]:
     bodies: list[TaskBody] = []
     current: TaskBody | None = None
     label: str | None = None
     for i in range(start - 1, end):
         raw = lines[i]
-        heading = TASK_HEADING.match(raw)
+        heading = TASK_HEADING.match(structure[i])
         if heading:
             current = TaskBody(label=heading.group(1), id=heading.group(2), line=i + 1)
             bodies.append(current)
@@ -147,7 +149,7 @@ def parse_task_bodies(lines: list[str], start: int, end: int) -> list[TaskBody]:
             continue
         if current is None:
             continue
-        field_label = FIELD_LABEL.match(raw)
+        field_label = FIELD_LABEL.match(structure[i])
         if field_label:
             label = field_label.group(1)
             current.fields.setdefault(label, [])
@@ -157,33 +159,20 @@ def parse_task_bodies(lines: list[str], start: int, end: int) -> list[TaskBody]:
     return bodies
 
 
-def load(path: str) -> PlanDoc:
-    if path == "-":
-        text = sys.stdin.read()
-    else:
-        with open(path, encoding="utf-8") as handle:
-            text = handle.read()
+def parse(text: str) -> PlanDoc:
+    """Parse text once, sharing fence visibility across all structure readers."""
     lines = text.splitlines()
-    sections = parse_sections(lines)
+    structure = visible_lines(lines)
+    sections = parse_sections(structure)
+    tables = {sec.title: parse_tables(structure, sec.start, sec.end) for sec in sections}
+    tasks = next((sec for sec in sections if sec.title == "Tasks"), None)
+    bodies = parse_task_bodies(lines, structure, tasks.start, tasks.end) if tasks else []
+    return PlanDoc(lines, structure, sections, tables, bodies)
 
-    # A `## Section` runs to the next `##`, not to the next heading of any
-    # level, so `## Tasks` keeps its `### T<n>` subsections.
-    level2 = [s for s in sections if s.level == 2]
-    for earlier, later in zip(level2, level2[1:]):
-        earlier.end = later.start - 1
-    if level2:
-        level2[-1].end = len(lines)
 
-    tables: dict[str, list[Table]] = {}
-    for sec in sections:
-        if sec.level != 2:
-            continue
-        tables[sec.title] = parse_tables(lines, sec.start, sec.end)
-
-    tasks_section = next((s for s in sections if s.title == "Tasks" and s.level == 2), None)
-    bodies = parse_task_bodies(lines, tasks_section.start, tasks_section.end) if tasks_section else []
-
-    return PlanDoc(lines=lines, sections=sections, tables=tables, task_bodies=bodies)
+def load(path: str | Path) -> PlanDoc:
+    text = sys.stdin.read() if str(path) == "-" else Path(path).read_text(encoding="utf-8")
+    return parse(text)
 
 
 def task_number(label: str) -> int | None:
